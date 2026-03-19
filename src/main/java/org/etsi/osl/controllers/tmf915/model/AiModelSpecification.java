@@ -1,53 +1,65 @@
 package org.etsi.osl.controllers.tmf915.model;
 
 import java.net.URI;
-import java.util.Objects;
-import com.fasterxml.jackson.annotation.JsonProperty;
-import com.fasterxml.jackson.annotation.JsonCreator;
-import java.net.URI;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
-import org.etsi.osl.controllers.tmf915.model.AttachmentRefOrValue;
-import org.etsi.osl.controllers.tmf915.model.CharacteristicSpecification;
-import org.etsi.osl.controllers.tmf915.model.ConstraintRef;
-import org.etsi.osl.controllers.tmf915.model.EntitySpecificationRelationship;
-import org.etsi.osl.controllers.tmf915.model.FeatureSpecification;
-import org.etsi.osl.controllers.tmf915.model.RelatedParty;
-import org.etsi.osl.controllers.tmf915.model.ResourceSpecificationRef;
-import org.etsi.osl.controllers.tmf915.model.ServiceLevelSpecificationRef;
-import org.etsi.osl.controllers.tmf915.model.ServiceSpecRelationship;
-import org.etsi.osl.controllers.tmf915.model.TargetEntitySchema;
-import org.etsi.osl.controllers.tmf915.model.TimePeriod;
+import java.util.Objects;
+
+import org.etsi.osl.controllers.tmf915.mappers.converters.AttachmentRefOrValueListConverter;
+import org.etsi.osl.controllers.tmf915.mappers.converters.ConstraintRefListConverter;
+import org.etsi.osl.controllers.tmf915.mappers.converters.EntitySpecificationRelationshipListConverter;
+import org.etsi.osl.controllers.tmf915.mappers.converters.FeatureSpecificationListConverter;
+import org.etsi.osl.controllers.tmf915.mappers.converters.ObjectToJsonConverter;
+import org.etsi.osl.controllers.tmf915.mappers.converters.RelatedPartyListConverter;
+import org.etsi.osl.controllers.tmf915.mappers.converters.ResourceSpecificationRefListConverter;
+import org.etsi.osl.controllers.tmf915.mappers.converters.ServiceLevelSpecificationRefListConverter;
+import org.etsi.osl.controllers.tmf915.mappers.converters.ServiceSpecRelationshipListConverter;
+import org.etsi.osl.controllers.tmf915.mappers.converters.UriToStringConverter;
+import org.jspecify.annotations.Nullable;
 import org.springframework.format.annotation.DateTimeFormat;
-import org.springframework.lang.Nullable;
-import org.openapitools.jackson.nullable.JsonNullable;
-import java.time.OffsetDateTime;
-import jakarta.validation.Valid;
-import jakarta.validation.constraints.*;
+
+import com.fasterxml.jackson.annotation.JsonProperty;
+
 import io.swagger.v3.oas.annotations.media.Schema;
-
-
-import java.util.*;
 import jakarta.annotation.Generated;
+import jakarta.persistence.AttributeOverride;
+import jakarta.persistence.AttributeOverrides;
+import jakarta.persistence.CascadeType;
+import jakarta.persistence.Column;
+import jakarta.persistence.Convert;
+import jakarta.persistence.Embedded;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.OneToMany;
+import jakarta.persistence.Table;
+import jakarta.validation.Valid;
 
 /**
  * AiModelSpecification is a class that offers characteristics to describe a type of service. Functionally, it acts as a template by which Services may be instantiated. By sharing the same  specification, these services would therefore share the same set of characteristics.
  */
 
+@Entity
+@Table(name = "aim915_aimspec")
 @Schema(name = "AiModelSpecification", description = "AiModelSpecification is a class that offers characteristics to describe a type of service. Functionally, it acts as a template by which Services may be instantiated. By sharing the same  specification, these services would therefore share the same set of characteristics.")
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-03-18T18:56:23.275173970Z[Etc/UTC]", comments = "Generator version: 7.21.0-SNAPSHOT")
 public class AiModelSpecification {
 
+  @Id
   private @Nullable String id;
 
+  @Convert(converter = UriToStringConverter.class)
   private @Nullable URI href;
 
+  @Convert(converter = ObjectToJsonConverter.class)
+  @Column(columnDefinition = "TEXT")
   private @Nullable Object deploymentRecord;
 
   private @Nullable String description;
 
+  @Convert(converter = ObjectToJsonConverter.class)
+  @Column(columnDefinition = "TEXT")
   private @Nullable Object inheritedModel;
 
   private @Nullable Boolean isBundle;
@@ -57,53 +69,92 @@ public class AiModelSpecification {
 
   private @Nullable String lifecycleStatus;
 
+  @Convert(converter = ObjectToJsonConverter.class)
+  @Column(columnDefinition = "TEXT")
   private @Nullable Object modelContractVersionHistory;
 
+  @Convert(converter = ObjectToJsonConverter.class)
+  @Column(columnDefinition = "TEXT")
   private @Nullable Object modelDataSheet;
 
+  @Convert(converter = ObjectToJsonConverter.class)
+  @Column(columnDefinition = "TEXT")
   private @Nullable Object modelEvaluationData;
 
+  @Convert(converter = ObjectToJsonConverter.class)
+  @Column(columnDefinition = "TEXT")
   private @Nullable Object modelSpecificationHistory;
 
+  @Convert(converter = ObjectToJsonConverter.class)
+  @Column(columnDefinition = "TEXT")
   private @Nullable Object modelTrainingData;
 
   private @Nullable String name;
 
   private @Nullable String version;
 
+  @Convert(converter = AttachmentRefOrValueListConverter.class)
+  @Column(columnDefinition = "TEXT")
   @Valid
   private List<@Valid AttachmentRefOrValue> attachment = new ArrayList<>();
 
+  @Convert(converter = ConstraintRefListConverter.class)
+  @Column(columnDefinition = "TEXT")
   @Valid
   private List<@Valid ConstraintRef> constraint = new ArrayList<>();
 
+  @Convert(converter = EntitySpecificationRelationshipListConverter.class)
+  @Column(columnDefinition = "TEXT")
   @Valid
   private List<@Valid EntitySpecificationRelationship> entitySpecRelationship = new ArrayList<>();
 
+  @Convert(converter = FeatureSpecificationListConverter.class)
+  @Column(columnDefinition = "TEXT")
   @Valid
   private List<@Valid FeatureSpecification> featureSpecification = new ArrayList<>();
 
+  @Convert(converter = RelatedPartyListConverter.class)
+  @Column(columnDefinition = "TEXT")
   @Valid
   private List<@Valid RelatedParty> relatedParty = new ArrayList<>();
 
+  @Convert(converter = ResourceSpecificationRefListConverter.class)
+  @Column(columnDefinition = "TEXT")
   @Valid
   private List<@Valid ResourceSpecificationRef> resourceSpecification = new ArrayList<>();
 
+  @Convert(converter = ServiceLevelSpecificationRefListConverter.class)
+  @Column(columnDefinition = "TEXT")
   @Valid
   private List<@Valid ServiceLevelSpecificationRef> serviceLevelSpecification = new ArrayList<>();
 
+  @Convert(converter = ServiceSpecRelationshipListConverter.class)
+  @Column(columnDefinition = "TEXT")
   @Valid
   private List<@Valid ServiceSpecRelationship> serviceSpecRelationship = new ArrayList<>();
 
+  @OneToMany(cascade = CascadeType.ALL, orphanRemoval = true)
+  @JoinColumn(name = "aim_spec_id")
   @Valid
   private List<@Valid CharacteristicSpecification> specCharacteristic = new ArrayList<>();
 
+  @Embedded
+  @AttributeOverrides({
+      @AttributeOverride(name = "atSchemaLocation", column = @Column(name = "tes_schema_loc")),
+      @AttributeOverride(name = "atType",           column = @Column(name = "tes_type"))
+  })
   private @Nullable TargetEntitySchema targetEntitySchema;
 
+  @Embedded
+  @AttributeOverrides({
+      @AttributeOverride(name = "startDateTime", column = @Column(name = "valid_for_start")),
+      @AttributeOverride(name = "endDateTime",   column = @Column(name = "valid_for_end"))
+  })
   private @Nullable TimePeriod validFor;
 
   private @Nullable String atBaseType;
 
+  @Convert(converter = UriToStringConverter.class)
   private @Nullable URI atSchemaLocation;
 
   private @Nullable String atType;

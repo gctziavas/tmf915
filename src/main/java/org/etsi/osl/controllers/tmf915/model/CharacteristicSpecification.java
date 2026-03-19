@@ -16,6 +16,19 @@ import org.openapitools.jackson.nullable.JsonNullable;
 import java.time.OffsetDateTime;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.*;
+import jakarta.persistence.AttributeOverride;
+import jakarta.persistence.AttributeOverrides;
+import jakarta.persistence.Column;
+import jakarta.persistence.Convert;
+import jakarta.persistence.Embedded;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
+import jakarta.persistence.Entity;
+import org.etsi.osl.controllers.tmf915.mappers.converters.CharacteristicSpecificationRelationshipListConverter;
+import org.etsi.osl.controllers.tmf915.mappers.converters.CharacteristicValueSpecificationListConverter;
+import org.etsi.osl.controllers.tmf915.mappers.converters.UriToStringConverter;
 import io.swagger.v3.oas.annotations.media.Schema;
 
 
@@ -26,10 +39,14 @@ import jakarta.annotation.Generated;
  * This class defines a characteristic specification.
  */
 
+@Entity
+@Table(name = "aim915_charspec")
 @Schema(name = "CharacteristicSpecification", description = "This class defines a characteristic specification.")
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-03-18T18:56:23.275173970Z[Etc/UTC]", comments = "Generator version: 7.21.0-SNAPSHOT")
 public class CharacteristicSpecification {
 
+  @Id
+  @GeneratedValue(strategy = GenerationType.UUID)
   private @Nullable String id;
 
   private @Nullable Boolean configurable;
@@ -50,16 +67,26 @@ public class CharacteristicSpecification {
 
   private @Nullable String valueType;
 
+  @Convert(converter = CharacteristicSpecificationRelationshipListConverter.class)
+  @Column(columnDefinition = "TEXT")
   @Valid
   private List<@Valid CharacteristicSpecificationRelationship> charSpecRelationship = new ArrayList<>();
 
+  @Convert(converter = CharacteristicValueSpecificationListConverter.class)
+  @Column(columnDefinition = "TEXT")
   @Valid
   private List<@Valid CharacteristicValueSpecification> characteristicValueSpecification = new ArrayList<>();
 
+  @Embedded
+  @AttributeOverrides({
+      @AttributeOverride(name = "startDateTime", column = @Column(name = "valid_for_start")),
+      @AttributeOverride(name = "endDateTime",   column = @Column(name = "valid_for_end"))
+  })
   private @Nullable TimePeriod validFor;
 
   private @Nullable String atBaseType;
 
+  @Convert(converter = UriToStringConverter.class)
   private @Nullable URI atSchemaLocation;
 
   private @Nullable String atType;

@@ -31,6 +31,22 @@ import org.openapitools.jackson.nullable.JsonNullable;
 import java.time.OffsetDateTime;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.*;
+import jakarta.persistence.AttributeOverride;
+import jakarta.persistence.AttributeOverrides;
+import jakarta.persistence.CascadeType;
+import jakarta.persistence.Column;
+import jakarta.persistence.Convert;
+import jakarta.persistence.Embedded;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
+import jakarta.persistence.FetchType;
+import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
+import jakarta.persistence.OneToMany;
+import jakarta.persistence.Table;
+import jakarta.persistence.Entity;
+import org.etsi.osl.controllers.tmf915.mappers.converters.*;
 import io.swagger.v3.oas.annotations.media.Schema;
 
 
@@ -41,12 +57,16 @@ import jakarta.annotation.Generated;
  * AiModel is a base class for defining the AiModel hierarchy
  */
 
+@Entity
+@Table(name = "aim915_aim")
 @Schema(name = "AiModel", description = "AiModel is a base class for defining the AiModel hierarchy")
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-03-18T18:56:23.275173970Z[Etc/UTC]", comments = "Generator version: 7.21.0-SNAPSHOT")
 public class AiModel {
 
+  @Id
   private @Nullable String id;
 
+  @Convert(converter = UriToStringConverter.class)
   private @Nullable URI href;
 
   private @Nullable String category;
@@ -75,51 +95,108 @@ public class AiModel {
 
   private @Nullable String startMode;
 
+  @ManyToOne(fetch = FetchType.LAZY)
+  @JoinColumn(name = "ai_model_specification_id")
   private @Nullable AiModelSpecification aiModelSpecification;
 
+  @Convert(converter = FeatureListConverter.class)
+  @Column(columnDefinition = "TEXT")
   @Valid
   private List<@Valid Feature> feature = new ArrayList<>();
 
+  @Embedded
+  @AttributeOverrides({
+      @AttributeOverride(name = "id",               column = @Column(name = "gpu_id")),
+      @AttributeOverride(name = "href",             column = @Column(name = "gpu_href")),
+      @AttributeOverride(name = "name",             column = @Column(name = "gpu_name")),
+      @AttributeOverride(name = "atBaseType",       column = @Column(name = "gpu_base_type")),
+      @AttributeOverride(name = "atSchemaLocation", column = @Column(name = "gpu_schema_loc")),
+      @AttributeOverride(name = "atType",           column = @Column(name = "gpu_type")),
+      @AttributeOverride(name = "atReferredType",   column = @Column(name = "gpu_referred_type"))
+  })
   private @Nullable ResourceRef gpu;
 
+  @Convert(converter = NoteListConverter.class)
+  @Column(columnDefinition = "TEXT")
   @Valid
   private List<@Valid Note> note = new ArrayList<>();
 
+  @Convert(converter = RelatedPlaceRefOrValueListConverter.class)
+  @Column(columnDefinition = "TEXT")
   @Valid
   private List<@Valid RelatedPlaceRefOrValue> place = new ArrayList<>();
 
+  @Convert(converter = RelatedEntityRefOrValueListConverter.class)
+  @Column(columnDefinition = "TEXT")
   @Valid
   private List<@Valid RelatedEntityRefOrValue> relatedEntity = new ArrayList<>();
 
+  @Convert(converter = RelatedPartyListConverter.class)
+  @Column(columnDefinition = "TEXT")
   @Valid
   private List<@Valid RelatedParty> relatedParty = new ArrayList<>();
 
+  @OneToMany(cascade = CascadeType.ALL, orphanRemoval = true)
+  @JoinColumn(name = "aim_id")
   @Valid
   private List<@Valid Characteristic> serviceCharacteristic = new ArrayList<>();
 
+  @Convert(converter = RelatedServiceOrderItemListConverter.class)
+  @Column(columnDefinition = "TEXT")
   @Valid
   private List<@Valid RelatedServiceOrderItem> serviceOrderItem = new ArrayList<>();
 
+  @Convert(converter = ServiceRelationshipListConverter.class)
+  @Column(columnDefinition = "TEXT")
   @Valid
   private List<@Valid ServiceRelationship> serviceRelationship = new ArrayList<>();
 
+  @Embedded
+  @AttributeOverrides({
+      @AttributeOverride(name = "id",               column = @Column(name = "svc_spec_id")),
+      @AttributeOverride(name = "href",             column = @Column(name = "svc_spec_href")),
+      @AttributeOverride(name = "name",             column = @Column(name = "svc_spec_name")),
+      @AttributeOverride(name = "version",          column = @Column(name = "svc_spec_version")),
+      @AttributeOverride(name = "atBaseType",       column = @Column(name = "svc_spec_base_type")),
+      @AttributeOverride(name = "atSchemaLocation", column = @Column(name = "svc_spec_schema_loc")),
+      @AttributeOverride(name = "atType",           column = @Column(name = "svc_spec_type")),
+      @AttributeOverride(name = "atReferredType",   column = @Column(name = "svc_spec_referred_type"))
+  })
   private @Nullable ServiceSpecificationRef serviceSpecification;
 
+  @Convert(converter = SoftwareRefListConverter.class)
+  @Column(columnDefinition = "TEXT")
   @Valid
   private List<@Valid SoftwareRef> software = new ArrayList<>();
 
+  @Enumerated(EnumType.STRING)
   private @Nullable ServiceStateType state;
 
+  @Convert(converter = ResourceRefListConverter.class)
+  @Column(columnDefinition = "TEXT")
   @Valid
   private List<@Valid ResourceRef> supportingResource = new ArrayList<>();
 
+  @Convert(converter = ServiceRefOrValueListConverter.class)
+  @Column(columnDefinition = "TEXT")
   @Valid
   private List<@Valid ServiceRefOrValue> supportingService = new ArrayList<>();
 
+  @Embedded
+  @AttributeOverrides({
+      @AttributeOverride(name = "id",               column = @Column(name = "td_id")),
+      @AttributeOverride(name = "href",             column = @Column(name = "td_href")),
+      @AttributeOverride(name = "name",             column = @Column(name = "td_name")),
+      @AttributeOverride(name = "atBaseType",       column = @Column(name = "td_base_type")),
+      @AttributeOverride(name = "atSchemaLocation", column = @Column(name = "td_schema_loc")),
+      @AttributeOverride(name = "atType",           column = @Column(name = "td_type")),
+      @AttributeOverride(name = "atReferredType",   column = @Column(name = "td_referred_type"))
+  })
   private @Nullable EntityRef trainingData;
 
   private @Nullable String atBaseType;
 
+  @Convert(converter = UriToStringConverter.class)
   private @Nullable URI atSchemaLocation;
 
   private @Nullable String atType;

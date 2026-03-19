@@ -35,3 +35,161 @@ You can view the api documentation in swagger-ui by pointing to
 http://localhost:8080/swagger-ui.html
 
 Change default port value in application.properties
+
+---
+
+## Database Schema
+
+Four tables are created by Hibernate (`spring.jpa.hibernate.ddl-auto: update`).  
+Complex reference lists are stored as JSON `TEXT` columns. Embedded value objects are flattened into the parent table with prefixed column names.
+
+---
+
+### `aim915_aimspec` — AiModelSpecification
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | VARCHAR | PK — UUID assigned by service layer |
+| `href` | VARCHAR | URI stored as string |
+| `description` | VARCHAR | |
+| `is_bundle` | BOOLEAN | |
+| `last_update` | TIMESTAMP | |
+| `lifecycle_status` | VARCHAR | |
+| `name` | VARCHAR | |
+| `version` | VARCHAR | |
+| `at_base_type` | VARCHAR | |
+| `at_schema_location` | VARCHAR | URI stored as string |
+| `at_type` | VARCHAR | |
+| `deployment_record` | TEXT | JSON (`Object`) |
+| `inherited_model` | TEXT | JSON (`Object`) |
+| `model_contract_version_history` | TEXT | JSON (`Object`) |
+| `model_data_sheet` | TEXT | JSON (`Object`) |
+| `model_evaluation_data` | TEXT | JSON (`Object`) |
+| `model_specification_history` | TEXT | JSON (`Object`) |
+| `model_training_data` | TEXT | JSON (`Object`) |
+| `attachment` | TEXT | JSON `List<AttachmentRefOrValue>` |
+| `constraint` | TEXT | JSON `List<ConstraintRef>` |
+| `entity_spec_relationship` | TEXT | JSON `List<EntitySpecificationRelationship>` |
+| `feature_specification` | TEXT | JSON `List<FeatureSpecification>` |
+| `related_party` | TEXT | JSON `List<RelatedParty>` |
+| `resource_specification` | TEXT | JSON `List<ResourceSpecificationRef>` |
+| `service_level_specification` | TEXT | JSON `List<ServiceLevelSpecificationRef>` |
+| `service_spec_relationship` | TEXT | JSON `List<ServiceSpecRelationship>` |
+| `tes_schema_loc` | VARCHAR | Embedded `TargetEntitySchema.atSchemaLocation` |
+| `tes_type` | VARCHAR | Embedded `TargetEntitySchema.atType` |
+| `valid_for_start` | TIMESTAMP | Embedded `TimePeriod.startDateTime` |
+| `valid_for_end` | TIMESTAMP | Embedded `TimePeriod.endDateTime` |
+
+---
+
+### `aim915_aim` — AiModel
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | VARCHAR | PK — UUID assigned by service layer |
+| `href` | VARCHAR | URI stored as string |
+| `category` | VARCHAR | |
+| `description` | VARCHAR | |
+| `end_date` | TIMESTAMP | |
+| `has_started` | BOOLEAN | |
+| `is_bundle` | BOOLEAN | |
+| `is_service_enabled` | BOOLEAN | |
+| `is_stateful` | BOOLEAN | |
+| `name` | VARCHAR | |
+| `service_date` | VARCHAR | |
+| `service_type` | VARCHAR | |
+| `start_date` | TIMESTAMP | |
+| `start_mode` | VARCHAR | |
+| `state` | VARCHAR | Enum stored as string |
+| `at_base_type` | VARCHAR | |
+| `at_schema_location` | VARCHAR | URI stored as string |
+| `at_type` | VARCHAR | |
+| `ai_model_specification_id` | VARCHAR | FK → `aim915_aimspec.id` |
+| `gpu_id` | VARCHAR | Embedded `ResourceRef` (GPU) |
+| `gpu_href` | VARCHAR | |
+| `gpu_name` | VARCHAR | |
+| `gpu_base_type` | VARCHAR | |
+| `gpu_schema_loc` | VARCHAR | URI stored as string |
+| `gpu_type` | VARCHAR | |
+| `gpu_referred_type` | VARCHAR | |
+| `svc_spec_id` | VARCHAR | Embedded `ServiceSpecificationRef` |
+| `svc_spec_href` | VARCHAR | |
+| `svc_spec_name` | VARCHAR | |
+| `svc_spec_version` | VARCHAR | |
+| `svc_spec_base_type` | VARCHAR | |
+| `svc_spec_schema_loc` | VARCHAR | URI stored as string |
+| `svc_spec_type` | VARCHAR | |
+| `svc_spec_referred_type` | VARCHAR | |
+| `td_id` | VARCHAR | Embedded `EntityRef` (trainingData) |
+| `td_href` | VARCHAR | |
+| `td_name` | VARCHAR | |
+| `td_base_type` | VARCHAR | |
+| `td_schema_loc` | VARCHAR | URI stored as string |
+| `td_type` | VARCHAR | |
+| `td_referred_type` | VARCHAR | |
+| `feature` | TEXT | JSON `List<Feature>` |
+| `note` | TEXT | JSON `List<Note>` |
+| `place` | TEXT | JSON `List<RelatedPlaceRefOrValue>` |
+| `related_entity` | TEXT | JSON `List<RelatedEntityRefOrValue>` |
+| `related_party` | TEXT | JSON `List<RelatedParty>` |
+| `service_order_item` | TEXT | JSON `List<RelatedServiceOrderItem>` |
+| `service_relationship` | TEXT | JSON `List<ServiceRelationship>` |
+| `software` | TEXT | JSON `List<SoftwareRef>` |
+| `supporting_resource` | TEXT | JSON `List<ResourceRef>` |
+| `supporting_service` | TEXT | JSON `List<ServiceRefOrValue>` |
+
+---
+
+### `aim915_char` — Characteristic
+
+Child of `aim915_aim` via FK `aim_id`.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | VARCHAR | PK — UUID auto-generated |
+| `aim_id` | VARCHAR | FK → `aim915_aim.id` |
+| `name` | VARCHAR | |
+| `value_type` | VARCHAR | |
+| `at_base_type` | VARCHAR | |
+| `at_schema_location` | VARCHAR | URI stored as string |
+| `at_type` | VARCHAR | |
+| `value` | TEXT | JSON (`Object`) |
+| `characteristic_relationship` | TEXT | JSON `List<CharacteristicRelationship>` |
+
+---
+
+### `aim915_charspec` — CharacteristicSpecification
+
+Child of `aim915_aimspec` via FK `aim_spec_id`.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | VARCHAR | PK — UUID auto-generated |
+| `aim_spec_id` | VARCHAR | FK → `aim915_aimspec.id` |
+| `name` | VARCHAR | |
+| `description` | VARCHAR | |
+| `value_type` | VARCHAR | |
+| `configurable` | BOOLEAN | |
+| `extensible` | BOOLEAN | |
+| `is_unique` | BOOLEAN | |
+| `max_cardinality` | INTEGER | |
+| `min_cardinality` | INTEGER | |
+| `regex` | VARCHAR | |
+| `at_value_schema_location` | VARCHAR | |
+| `at_base_type` | VARCHAR | |
+| `at_schema_location` | VARCHAR | URI stored as string |
+| `at_type` | VARCHAR | |
+| `valid_for_start` | TIMESTAMP | Embedded `TimePeriod.startDateTime` |
+| `valid_for_end` | TIMESTAMP | Embedded `TimePeriod.endDateTime` |
+| `char_spec_relationship` | TEXT | JSON `List<CharacteristicSpecificationRelationship>` |
+| `characteristic_value_specification` | TEXT | JSON `List<CharacteristicValueSpecification>` |
+
+---
+
+### Entity Relationship
+
+```
+aim915_aimspec (1) ──< aim915_aim (many)
+aim915_aim     (1) ──< aim915_char      (many)   [serviceCharacteristic]
+aim915_aimspec (1) ──< aim915_charspec  (many)   [specCharacteristic]
+```

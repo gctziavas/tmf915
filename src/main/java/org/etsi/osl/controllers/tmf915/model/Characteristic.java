@@ -14,6 +14,16 @@ import org.openapitools.jackson.nullable.JsonNullable;
 import java.time.OffsetDateTime;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.*;
+import jakarta.persistence.Column;
+import jakarta.persistence.Convert;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
+import jakarta.persistence.Entity;
+import org.etsi.osl.controllers.tmf915.mappers.converters.CharacteristicRelationshipListConverter;
+import org.etsi.osl.controllers.tmf915.mappers.converters.ObjectToJsonConverter;
+import org.etsi.osl.controllers.tmf915.mappers.converters.UriToStringConverter;
 import io.swagger.v3.oas.annotations.media.Schema;
 
 
@@ -24,23 +34,32 @@ import jakarta.annotation.Generated;
  * Describes a given characteristic of an object or entity through a name/value pair.
  */
 
+@Entity
+@Table(name = "aim915_char")
 @Schema(name = "Characteristic", description = "Describes a given characteristic of an object or entity through a name/value pair.")
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-03-18T18:56:23.275173970Z[Etc/UTC]", comments = "Generator version: 7.21.0-SNAPSHOT")
 public class Characteristic {
 
+  @Id
+  @GeneratedValue(strategy = GenerationType.UUID)
   private @Nullable String id;
 
   private String name;
 
   private @Nullable String valueType;
 
+  @Convert(converter = CharacteristicRelationshipListConverter.class)
+  @Column(columnDefinition = "TEXT")
   @Valid
   private List<@Valid CharacteristicRelationship> characteristicRelationship = new ArrayList<>();
 
+  @Convert(converter = ObjectToJsonConverter.class)
+  @Column(columnDefinition = "TEXT")
   private Object value;
 
   private @Nullable String atBaseType;
 
+  @Convert(converter = UriToStringConverter.class)
   private @Nullable URI atSchemaLocation;
 
   private @Nullable String atType;

@@ -6,8 +6,6 @@ server:
   port: 13082
   servlet:
     context-path: /tmf-api
-  error:
-    include-message: always
   ssl:
     enabled: false
 
@@ -38,11 +36,31 @@ spring-addons:
     - jsonPath: $.resource_access.*.roles
 
 spring:
+  web:
+    error:
+      include-message: always
   config:
     activate:
       on-profile: "default"
   application:
     name: openslice-aim915-api
+  datasource:
+    url: jdbc:mysql://localhost:3306/aim915db?createDatabaseIfNotExist=true&useUnicode=true&characterEncoding=utf8&serverTimezone=UTC
+    username: root
+    password: letmein
+    hikari:
+      minimumIdle: 2
+      maximumPoolSize: 20
+      idleTimeout: 20000
+      connectionTimeout: 40000
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    generate-ddl: true
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.MySQLDialect
   servlet:
     multipart.max-file-size: 10MB
     multipart.max-request-size: 10MB
@@ -54,9 +72,6 @@ spring:
           jwk-set-uri: http://keycloak:8080/auth/realms/openslice/.well-known/openid-configuration
   jackson:
     date-format: org.etsi.osl.controllers.tmf915.RFC3339DateFormat
-    serialization:
-      WRITE_DATES_AS_TIMESTAMPS: false
-
 logging:
   level:
     root: INFO

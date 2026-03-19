@@ -10,6 +10,9 @@ import org.openapitools.jackson.nullable.JsonNullable;
 import java.time.OffsetDateTime;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.*;
+import jakarta.persistence.Convert;
+import jakarta.persistence.Embeddable;
+import org.etsi.osl.controllers.tmf915.mappers.converters.UriToStringConverter;
 import io.swagger.v3.oas.annotations.media.Schema;
 
 
@@ -20,18 +23,21 @@ import jakarta.annotation.Generated;
  * Entity reference schema to be use for all entityRef class.
  */
 
+@Embeddable
 @Schema(name = "EntityRef", description = "Entity reference schema to be use for all entityRef class.")
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-03-18T18:56:23.275173970Z[Etc/UTC]", comments = "Generator version: 7.21.0-SNAPSHOT")
 public class EntityRef {
 
   private String id;
 
+  @Convert(converter = UriToStringConverter.class)
   private @Nullable URI href;
 
   private @Nullable String name;
 
   private @Nullable String atBaseType;
 
+  @Convert(converter = UriToStringConverter.class)
   private @Nullable URI atSchemaLocation;
 
   private @Nullable String atType;
