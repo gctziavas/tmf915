@@ -88,28 +88,29 @@ oauthsign:
 
 mlflow: # MLflow configuration for AIM915 model management
   enabled: true
-  # MLflow tracking server host
-  host: "127.0.0.1"
-  port: 5000
-  # Optional: override the tracking URI (empty = auto-build from host:port)
-  tracking-uri: ""
+  tracking-uri: "http://127.0.0.1:5000"
   connection-timeout: 30000 #ms
   read-timeout: 60000 #ms
+  # S3/MinIO artifact storage (set if MLflow uses S3-compatible storage)
+  s3-endpoint-url: ""
+  s3-access-key: ""
+  s3-secret-key: ""
+  sync: # Periodic sync of MLflow models to TMF 915 AiModelSpecifications
+    enabled: true
+    interval-ms: 60000 # 1 minute
+    base-url: "" # Base URL for artifact endpoints (empty = auto from server config)
   docker: # Docker deployment configuration
-    # Enable Docker-based model deployment
-    enabled: false
-    # Docker daemon host (e.g., 10.0.0.1)
+    # Docker daemon host URI (e.g., tcp://10.0.0.1:2375). Empty = local Docker.
     host: ""
-    # Docker API port (2375 = unencrypted, 2376 = TLS)
-    port: 2375
-    # Enable TLS for Docker API communication
-    tls-enabled: false
-    # MLflow Docker image to use for model serving
-    image: "ghcr.io/mlflow/mlflow:v2.10.0"
-    # Default container port for model serving
-    container-port: 5001
-    # Timeout waiting for container to become healthy
-    startup-timeout-seconds: 120
+    # Container port that MLflow model serves on
+    container-port: 8080
+    # Host port range to scan for available ports (inclusive)
+    host-port-start: 3000
+    host-port-end: 7000
+    # Environment manager for mlflow models build-docker (local, virtualenv, uv)
+    env-manager: "local"
+    # Timeout in seconds for docker run command
+    command-timeout-seconds: 30
 
 aimodel: # AIM915 model management configuration
   deployment:

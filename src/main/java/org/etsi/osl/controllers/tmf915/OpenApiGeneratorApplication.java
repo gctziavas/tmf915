@@ -7,10 +7,12 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.FullyQualifiedAnnotationBeanNameGenerator;
+import org.springframework.scheduling.annotation.EnableScheduling;
 
 @SpringBootApplication(
     nameGenerator = FullyQualifiedAnnotationBeanNameGenerator.class
 )
+@EnableScheduling
 @ComponentScan(
     basePackages = {"org.etsi.osl.controllers.tmf915", "org.etsi.osl.controllers.tmf915.api" , "org.openapitools.configuration"},
     nameGenerator = FullyQualifiedAnnotationBeanNameGenerator.class

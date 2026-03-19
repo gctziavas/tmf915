@@ -2,7 +2,6 @@
 
 Spring Boot Server
 
-
 ## Generation command
 
 ```bash
@@ -40,103 +39,105 @@ Change default port value in application.properties
 
 ## Database Schema
 
-Four tables are created by Hibernate (`spring.jpa.hibernate.ddl-auto: update`).  
+Four tables are created by Hibernate (`spring.jpa.hibernate.ddl-auto: update`).
 Complex reference lists are stored as JSON `TEXT` columns. Embedded value objects are flattened into the parent table with prefixed column names.
 
 ---
 
 ### `aim915_aimspec` — AiModelSpecification
 
-| Column | Type | Notes |
-|--------|------|-------|
-| `id` | VARCHAR | PK — UUID assigned by service layer |
-| `href` | VARCHAR | URI stored as string |
-| `description` | VARCHAR | |
-| `is_bundle` | BOOLEAN | |
-| `last_update` | TIMESTAMP | |
-| `lifecycle_status` | VARCHAR | |
-| `name` | VARCHAR | |
-| `version` | VARCHAR | |
-| `at_base_type` | VARCHAR | |
-| `at_schema_location` | VARCHAR | URI stored as string |
-| `at_type` | VARCHAR | |
-| `deployment_record` | TEXT | JSON (`Object`) |
-| `inherited_model` | TEXT | JSON (`Object`) |
-| `model_contract_version_history` | TEXT | JSON (`Object`) |
-| `model_data_sheet` | TEXT | JSON (`Object`) |
-| `model_evaluation_data` | TEXT | JSON (`Object`) |
-| `model_specification_history` | TEXT | JSON (`Object`) |
-| `model_training_data` | TEXT | JSON (`Object`) |
-| `attachment` | TEXT | JSON `List<AttachmentRefOrValue>` |
-| `constraint` | TEXT | JSON `List<ConstraintRef>` |
-| `entity_spec_relationship` | TEXT | JSON `List<EntitySpecificationRelationship>` |
-| `feature_specification` | TEXT | JSON `List<FeatureSpecification>` |
-| `related_party` | TEXT | JSON `List<RelatedParty>` |
-| `resource_specification` | TEXT | JSON `List<ResourceSpecificationRef>` |
-| `service_level_specification` | TEXT | JSON `List<ServiceLevelSpecificationRef>` |
-| `service_spec_relationship` | TEXT | JSON `List<ServiceSpecRelationship>` |
-| `tes_schema_loc` | VARCHAR | Embedded `TargetEntitySchema.atSchemaLocation` |
-| `tes_type` | VARCHAR | Embedded `TargetEntitySchema.atType` |
-| `valid_for_start` | TIMESTAMP | Embedded `TimePeriod.startDateTime` |
-| `valid_for_end` | TIMESTAMP | Embedded `TimePeriod.endDateTime` |
+
+| Column                           | Type      | Notes                                         |
+| -------------------------------- | --------- | --------------------------------------------- |
+| `id`                             | VARCHAR   | PK — UUID assigned by service layer          |
+| `href`                           | VARCHAR   | URI stored as string                          |
+| `description`                    | VARCHAR   |                                               |
+| `is_bundle`                      | BOOLEAN   |                                               |
+| `last_update`                    | TIMESTAMP |                                               |
+| `lifecycle_status`               | VARCHAR   |                                               |
+| `name`                           | VARCHAR   |                                               |
+| `version`                        | VARCHAR   |                                               |
+| `at_base_type`                   | VARCHAR   |                                               |
+| `at_schema_location`             | VARCHAR   | URI stored as string                          |
+| `at_type`                        | VARCHAR   |                                               |
+| `deployment_record`              | TEXT      | JSON (`Object`)                               |
+| `inherited_model`                | TEXT      | JSON (`Object`)                               |
+| `model_contract_version_history` | TEXT      | JSON (`Object`)                               |
+| `model_data_sheet`               | TEXT      | JSON (`Object`)                               |
+| `model_evaluation_data`          | TEXT      | JSON (`Object`)                               |
+| `model_specification_history`    | TEXT      | JSON (`Object`)                               |
+| `model_training_data`            | TEXT      | JSON (`Object`)                               |
+| `attachment`                     | TEXT      | JSON`List<AttachmentRefOrValue>`              |
+| `constraint`                     | TEXT      | JSON`List<ConstraintRef>`                     |
+| `entity_spec_relationship`       | TEXT      | JSON`List<EntitySpecificationRelationship>`   |
+| `feature_specification`          | TEXT      | JSON`List<FeatureSpecification>`              |
+| `related_party`                  | TEXT      | JSON`List<RelatedParty>`                      |
+| `resource_specification`         | TEXT      | JSON`List<ResourceSpecificationRef>`          |
+| `service_level_specification`    | TEXT      | JSON`List<ServiceLevelSpecificationRef>`      |
+| `service_spec_relationship`      | TEXT      | JSON`List<ServiceSpecRelationship>`           |
+| `tes_schema_loc`                 | VARCHAR   | Embedded`TargetEntitySchema.atSchemaLocation` |
+| `tes_type`                       | VARCHAR   | Embedded`TargetEntitySchema.atType`           |
+| `valid_for_start`                | TIMESTAMP | Embedded`TimePeriod.startDateTime`            |
+| `valid_for_end`                  | TIMESTAMP | Embedded`TimePeriod.endDateTime`              |
 
 ---
 
 ### `aim915_aim` — AiModel
 
-| Column | Type | Notes |
-|--------|------|-------|
-| `id` | VARCHAR | PK — UUID assigned by service layer |
-| `href` | VARCHAR | URI stored as string |
-| `category` | VARCHAR | |
-| `description` | VARCHAR | |
-| `end_date` | TIMESTAMP | |
-| `has_started` | BOOLEAN | |
-| `is_bundle` | BOOLEAN | |
-| `is_service_enabled` | BOOLEAN | |
-| `is_stateful` | BOOLEAN | |
-| `name` | VARCHAR | |
-| `service_date` | VARCHAR | |
-| `service_type` | VARCHAR | |
-| `start_date` | TIMESTAMP | |
-| `start_mode` | VARCHAR | |
-| `state` | VARCHAR | Enum stored as string |
-| `at_base_type` | VARCHAR | |
-| `at_schema_location` | VARCHAR | URI stored as string |
-| `at_type` | VARCHAR | |
-| `ai_model_specification_id` | VARCHAR | FK → `aim915_aimspec.id` |
-| `gpu_id` | VARCHAR | Embedded `ResourceRef` (GPU) |
-| `gpu_href` | VARCHAR | |
-| `gpu_name` | VARCHAR | |
-| `gpu_base_type` | VARCHAR | |
-| `gpu_schema_loc` | VARCHAR | URI stored as string |
-| `gpu_type` | VARCHAR | |
-| `gpu_referred_type` | VARCHAR | |
-| `svc_spec_id` | VARCHAR | Embedded `ServiceSpecificationRef` |
-| `svc_spec_href` | VARCHAR | |
-| `svc_spec_name` | VARCHAR | |
-| `svc_spec_version` | VARCHAR | |
-| `svc_spec_base_type` | VARCHAR | |
-| `svc_spec_schema_loc` | VARCHAR | URI stored as string |
-| `svc_spec_type` | VARCHAR | |
-| `svc_spec_referred_type` | VARCHAR | |
-| `td_id` | VARCHAR | Embedded `EntityRef` (trainingData) |
-| `td_href` | VARCHAR | |
-| `td_name` | VARCHAR | |
-| `td_base_type` | VARCHAR | |
-| `td_schema_loc` | VARCHAR | URI stored as string |
-| `td_type` | VARCHAR | |
-| `td_referred_type` | VARCHAR | |
-| `feature` | TEXT | JSON `List<Feature>` |
-| `note` | TEXT | JSON `List<Note>` |
-| `place` | TEXT | JSON `List<RelatedPlaceRefOrValue>` |
-| `related_entity` | TEXT | JSON `List<RelatedEntityRefOrValue>` |
-| `related_party` | TEXT | JSON `List<RelatedParty>` |
-| `service_order_item` | TEXT | JSON `List<RelatedServiceOrderItem>` |
-| `service_relationship` | TEXT | JSON `List<ServiceRelationship>` |
-| `software` | TEXT | JSON `List<SoftwareRef>` |
-| `supporting_resource` | TEXT | JSON `List<ResourceRef>` |
-| `supporting_service` | TEXT | JSON `List<ServiceRefOrValue>` |
+
+| Column                      | Type      | Notes                                |
+| --------------------------- | --------- | ------------------------------------ |
+| `id`                        | VARCHAR   | PK — UUID assigned by service layer |
+| `href`                      | VARCHAR   | URI stored as string                 |
+| `category`                  | VARCHAR   |                                      |
+| `description`               | VARCHAR   |                                      |
+| `end_date`                  | TIMESTAMP |                                      |
+| `has_started`               | BOOLEAN   |                                      |
+| `is_bundle`                 | BOOLEAN   |                                      |
+| `is_service_enabled`        | BOOLEAN   |                                      |
+| `is_stateful`               | BOOLEAN   |                                      |
+| `name`                      | VARCHAR   |                                      |
+| `service_date`              | VARCHAR   |                                      |
+| `service_type`              | VARCHAR   |                                      |
+| `start_date`                | TIMESTAMP |                                      |
+| `start_mode`                | VARCHAR   |                                      |
+| `state`                     | VARCHAR   | Enum stored as string                |
+| `at_base_type`              | VARCHAR   |                                      |
+| `at_schema_location`        | VARCHAR   | URI stored as string                 |
+| `at_type`                   | VARCHAR   |                                      |
+| `ai_model_specification_id` | VARCHAR   | FK →`aim915_aimspec.id`             |
+| `gpu_id`                    | VARCHAR   | Embedded`ResourceRef` (GPU)          |
+| `gpu_href`                  | VARCHAR   |                                      |
+| `gpu_name`                  | VARCHAR   |                                      |
+| `gpu_base_type`             | VARCHAR   |                                      |
+| `gpu_schema_loc`            | VARCHAR   | URI stored as string                 |
+| `gpu_type`                  | VARCHAR   |                                      |
+| `gpu_referred_type`         | VARCHAR   |                                      |
+| `svc_spec_id`               | VARCHAR   | Embedded`ServiceSpecificationRef`    |
+| `svc_spec_href`             | VARCHAR   |                                      |
+| `svc_spec_name`             | VARCHAR   |                                      |
+| `svc_spec_version`          | VARCHAR   |                                      |
+| `svc_spec_base_type`        | VARCHAR   |                                      |
+| `svc_spec_schema_loc`       | VARCHAR   | URI stored as string                 |
+| `svc_spec_type`             | VARCHAR   |                                      |
+| `svc_spec_referred_type`    | VARCHAR   |                                      |
+| `td_id`                     | VARCHAR   | Embedded`EntityRef` (trainingData)   |
+| `td_href`                   | VARCHAR   |                                      |
+| `td_name`                   | VARCHAR   |                                      |
+| `td_base_type`              | VARCHAR   |                                      |
+| `td_schema_loc`             | VARCHAR   | URI stored as string                 |
+| `td_type`                   | VARCHAR   |                                      |
+| `td_referred_type`          | VARCHAR   |                                      |
+| `feature`                   | TEXT      | JSON`List<Feature>`                  |
+| `note`                      | TEXT      | JSON`List<Note>`                     |
+| `place`                     | TEXT      | JSON`List<RelatedPlaceRefOrValue>`   |
+| `related_entity`            | TEXT      | JSON`List<RelatedEntityRefOrValue>`  |
+| `related_party`             | TEXT      | JSON`List<RelatedParty>`             |
+| `service_order_item`        | TEXT      | JSON`List<RelatedServiceOrderItem>`  |
+| `service_relationship`      | TEXT      | JSON`List<ServiceRelationship>`      |
+| `software`                  | TEXT      | JSON`List<SoftwareRef>`              |
+| `supporting_resource`       | TEXT      | JSON`List<ResourceRef>`              |
+| `supporting_service`        | TEXT      | JSON`List<ServiceRefOrValue>`        |
 
 ---
 
@@ -144,17 +145,18 @@ Complex reference lists are stored as JSON `TEXT` columns. Embedded value object
 
 Child of `aim915_aim` via FK `aim_id`.
 
-| Column | Type | Notes |
-|--------|------|-------|
-| `id` | VARCHAR | PK — UUID auto-generated |
-| `aim_id` | VARCHAR | FK → `aim915_aim.id` |
-| `name` | VARCHAR | |
-| `value_type` | VARCHAR | |
-| `at_base_type` | VARCHAR | |
-| `at_schema_location` | VARCHAR | URI stored as string |
-| `at_type` | VARCHAR | |
-| `value` | TEXT | JSON (`Object`) |
-| `characteristic_relationship` | TEXT | JSON `List<CharacteristicRelationship>` |
+
+| Column                        | Type    | Notes                                  |
+| ----------------------------- | ------- | -------------------------------------- |
+| `id`                          | VARCHAR | PK — UUID auto-generated              |
+| `aim_id`                      | VARCHAR | FK →`aim915_aim.id`                   |
+| `name`                        | VARCHAR |                                        |
+| `value_type`                  | VARCHAR |                                        |
+| `at_base_type`                | VARCHAR |                                        |
+| `at_schema_location`          | VARCHAR | URI stored as string                   |
+| `at_type`                     | VARCHAR |                                        |
+| `value`                       | TEXT    | JSON (`Object`)                        |
+| `characteristic_relationship` | TEXT    | JSON`List<CharacteristicRelationship>` |
 
 ---
 
@@ -162,27 +164,28 @@ Child of `aim915_aim` via FK `aim_id`.
 
 Child of `aim915_aimspec` via FK `aim_spec_id`.
 
-| Column | Type | Notes |
-|--------|------|-------|
-| `id` | VARCHAR | PK — UUID auto-generated |
-| `aim_spec_id` | VARCHAR | FK → `aim915_aimspec.id` |
-| `name` | VARCHAR | |
-| `description` | VARCHAR | |
-| `value_type` | VARCHAR | |
-| `configurable` | BOOLEAN | |
-| `extensible` | BOOLEAN | |
-| `is_unique` | BOOLEAN | |
-| `max_cardinality` | INTEGER | |
-| `min_cardinality` | INTEGER | |
-| `regex` | VARCHAR | |
-| `at_value_schema_location` | VARCHAR | |
-| `at_base_type` | VARCHAR | |
-| `at_schema_location` | VARCHAR | URI stored as string |
-| `at_type` | VARCHAR | |
-| `valid_for_start` | TIMESTAMP | Embedded `TimePeriod.startDateTime` |
-| `valid_for_end` | TIMESTAMP | Embedded `TimePeriod.endDateTime` |
-| `char_spec_relationship` | TEXT | JSON `List<CharacteristicSpecificationRelationship>` |
-| `characteristic_value_specification` | TEXT | JSON `List<CharacteristicValueSpecification>` |
+
+| Column                               | Type      | Notes                                               |
+| ------------------------------------ | --------- | --------------------------------------------------- |
+| `id`                                 | VARCHAR   | PK — UUID auto-generated                           |
+| `aim_spec_id`                        | VARCHAR   | FK →`aim915_aimspec.id`                            |
+| `name`                               | VARCHAR   |                                                     |
+| `description`                        | VARCHAR   |                                                     |
+| `value_type`                         | VARCHAR   |                                                     |
+| `configurable`                       | BOOLEAN   |                                                     |
+| `extensible`                         | BOOLEAN   |                                                     |
+| `is_unique`                          | BOOLEAN   |                                                     |
+| `max_cardinality`                    | INTEGER   |                                                     |
+| `min_cardinality`                    | INTEGER   |                                                     |
+| `regex`                              | VARCHAR   |                                                     |
+| `at_value_schema_location`           | VARCHAR   |                                                     |
+| `at_base_type`                       | VARCHAR   |                                                     |
+| `at_schema_location`                 | VARCHAR   | URI stored as string                                |
+| `at_type`                            | VARCHAR   |                                                     |
+| `valid_for_start`                    | TIMESTAMP | Embedded`TimePeriod.startDateTime`                  |
+| `valid_for_end`                      | TIMESTAMP | Embedded`TimePeriod.endDateTime`                    |
+| `char_spec_relationship`             | TEXT      | JSON`List<CharacteristicSpecificationRelationship>` |
+| `characteristic_value_specification` | TEXT      | JSON`List<CharacteristicValueSpecification>`        |
 
 ---
 
@@ -193,3 +196,179 @@ aim915_aimspec (1) ──< aim915_aim (many)
 aim915_aim     (1) ──< aim915_char      (many)   [serviceCharacteristic]
 aim915_aimspec (1) ──< aim915_charspec  (many)   [specCharacteristic]
 ```
+
+---
+
+## MLflow Integration
+
+The `org.etsi.osl.controllers.tmf915.integrations.mlflow` package bridges
+[MLflow](https://mlflow.org/) model tracking with the TMF 915 AI Management API.
+It provides automatic discovery of MLflow models, conversion to TMF 915 entities,
+and Docker-based model serving — all driven by configuration.
+
+### Architecture
+
+```
+┌──────────────────────────────────────────────────────────────────────┐
+│                          MLflow Server                               │
+│  ┌─────────────────┐   ┌─────────────────┐   ┌────────────────────┐ │
+│  │ Registered Model │   │  Model Version   │   │     Run / Exp     │ │
+│  └────────┬────────┘   └────────┬─────────┘   └────────┬──────────┘ │
+└───────────┼──────────────────────┼──────────────────────┼────────────┘
+            │                      │                      │
+            ▼                      ▼                      ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│                       MlflowClientService                            │
+│  Thin wrapper around the MLflow Java client (v2.11.1).               │
+│  All calls return Optional / List; handles pagination internally.    │
+└───────────────────────────┬──────────────────────────────────────────┘
+                            │
+          ┌─────────────────┼─────────────────┐
+          ▼                 ▼                 ▼
+┌──────────────┐  ┌─────────────────┐  ┌──────────────────┐
+│  MlflowSync  │  │  MlflowSpec     │  │  MlflowModel     │
+│  Service     │  │  Service        │  │  Service          │
+│              │  │                 │  │                   │
+│ Scheduled    │─▶│ MLflow model →  │  │ RESERVED → ACTIVE │
+│ polling loop │  │ AiModelSpec     │  │ → TERMINATED      │
+│              │  │ conversion      │  │ lifecycle          │
+└──────────────┘  └─────────────────┘  └────────┬──────────┘
+                                                │
+                                                ▼
+                                       ┌────────────────────┐
+                                       │  MlflowDeployment  │
+                                       │  Service            │
+                                       │                    │
+                                       │ build-docker →     │
+                                       │ docker run →       │
+                                       │ docker stop        │
+                                       └────────────────────┘
+```
+
+### Services
+
+
+| Class                        | Responsibility                                                                                                                                                                    |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `MlflowConfiguration`        | Creates the`MlflowClient` bean from `mlflow.tracking-uri`.                                                                                                                        |
+| `MlflowClientService`        | Wraps the MLflow Java client with`Optional`-based returns, automatic pagination, and exception handling.                                                                          |
+| `MlflowSpecificationService` | Converts an MLflow registered model + version into an`AiModelSpecificationCreate` (the TMF 915 "blueprint"). Extracts metadata, metrics, framework info, tags, and artifact URLs. |
+| `MlflowSyncService`          | **Scheduled job** — periodically polls MLflow for all model versions and creates any missing `AiModelSpecification` records.                                                     |
+| `MlflowModelService`         | Manages the`AiModel` lifecycle (RESERVED → ACTIVE → TERMINATED). Orchestrates image build + container deploy.                                                                   |
+| `MlflowDeploymentService`    | Executes Docker CLI commands via`ProcessBuilder` (mirrors the Python `mlflow_model_image_builder` pattern). Builds images, runs/stops containers, scans port ranges.              |
+
+### TMF 915 Entity Mapping
+
+
+| MLflow Concept             | TMF 915 Entity         | Relationship                                                                            |
+| -------------------------- | ---------------------- | --------------------------------------------------------------------------------------- |
+| Registered model + version | `AiModelSpecification` | One spec per (name, version) pair. Stores model metadata, metrics, tags, artifact URIs. |
+| Deployed container         | `AiModel`              | One model per running inference endpoint. References its parent specification.          |
+
+### Sync Service
+
+When `mlflow.sync.enabled=true`, the `MlflowSyncService` runs a scheduled task that:
+
+1. Calls `searchAllModelVersions()` to fetch every model version from MLflow
+2. De-duplicates by (name, version)
+3. Checks the database for an existing `AiModelSpecification` with matching name and version
+4. If none exists, delegates to `MlflowSpecificationService.createSpecificationFromMlflow()` to create one
+
+New models registered in MLflow are discovered automatically — no manual API calls needed.
+
+### Deployment Lifecycle
+
+Deploying a model follows the Python `mlflow_model_image_builder` pattern:
+
+```
+1. createReservedAiModel()          →  AiModel in RESERVED state
+2. buildAndDeploy() / buildAndDeployFromModel()
+   ├─ imageExists()?                →  skip build if image cached
+   ├─ buildImage()                  →  mlflow models build-docker
+   ├─ deployContainer()             →  docker run -d -p host:container image
+   └─ activate AiModel              →  ACTIVE state + endpoint characteristic
+3. stopAndTerminate()               →  docker stop + TERMINATED state
+```
+
+All Docker commands are executed as subprocesses with the `DOCKER_HOST` environment variable,
+supporting both local and remote Docker daemons.
+
+### Configuration
+
+All settings live under the `mlflow` key in `application.yml`:
+
+```yaml
+mlflow:
+  enabled: false                    # Master switch for the entire integration
+  tracking-uri: "http://127.0.0.1:5000"
+  connection-timeout: 30000         # MLflow client connection timeout (ms)
+  read-timeout: 60000               # MLflow client read timeout (ms)
+
+  # S3/MinIO credentials (required if MLflow artifacts are stored in S3)
+  s3-endpoint-url: ""
+  s3-access-key: ""
+  s3-secret-key: ""
+
+  sync:
+    enabled: true                   # Enable periodic model discovery
+    interval-ms: 60000              # Poll interval (ms) — default 1 minute
+    base-url: ""                    # Base URL for artifact endpoints
+
+  docker:
+    host: ""                        # Docker host URI (e.g. tcp://10.0.0.1:2375)
+    container-port: 8080            # Port the MLflow model serves on inside the container
+    host-port-start: 3000           # Start of port scan range
+    host-port-end: 7000             # End of port scan range (inclusive)
+    env-manager: "local"            # Environment manager: local, virtualenv, uv
+    command-timeout-seconds: 30     # Timeout for docker run / stop commands
+```
+
+
+| Property                        | Default | Description                                                                                       |
+| ------------------------------- | ------- | ------------------------------------------------------------------------------------------------- |
+|                                 |         |                                                                                                   |
+| `mlflow.enabled`                | `false` | Activates the`MlflowClientService`, `MlflowDeploymentService`, and `MlflowModelService` beans.    |
+| `mlflow.tracking-uri`           | —      | **Required.** MLflow tracking server URL.                                                         |
+| `mlflow.sync.enabled`           | `true`  | Activates the`MlflowSyncService` scheduled task. Requires `mlflow.enabled=true`.                  |
+| `mlflow.sync.interval-ms`       | `60000` | Polling interval in milliseconds. Also used as the initial delay.                                 |
+| `mlflow.docker.host`            | `""`    | Docker daemon URI. Empty string = local Docker socket.                                            |
+| `mlflow.docker.host-port-start` | `3000`  | First port to try when scanning for an available host port.                                       |
+| `mlflow.docker.host-port-end`   | `7000`  | Last port to try (inclusive).                                                                     |
+| `mlflow.docker.env-manager`     | `local` | Passed to`mlflow models build-docker --env-manager`. Falls back to `virtualenv` if `local` fails. |
+| `mlflow.s3-endpoint-url`        | `""`    | S3-compatible endpoint for artifact storage. Set to MinIO URL if applicable.                      |
+
+### Characteristics Stored
+
+**AiModelSpecification** (via `MlflowSpecificationService`):
+
+
+| Characteristic    | Source                                          |
+| ----------------- | ----------------------------------------------- |
+| `modelName`       | Registered model name                           |
+| `modelVersion`    | Version number                                  |
+| `lifecycleStatus` | MLflow version status                           |
+| `stage`           | MLflow stage (None/Staging/Production/Archived) |
+| `runId`           | Training run ID                                 |
+| `artifactUri`     | Artifact storage location                       |
+| `mlflowUrl`       | Link to MLflow UI                               |
+| `modelType`       | Framework (sklearn, tensorflow, pytorch, etc.)  |
+| `metric_*`        | Evaluation metrics (accuracy, loss, f1, etc.)   |
+| `param_*`         | Training hyperparameters                        |
+| `tags`            | Combined model + version tags                   |
+
+**AiModel** (via `MlflowModelService`):
+
+
+| Characteristic       | Source                         |
+| -------------------- | ------------------------------ |
+| `platform`           | Always`mlflow`                 |
+| `deploymentTarget`   | `DOCKER` or `EXTERNAL`         |
+| `mlflowModelName`    | Registered model name          |
+| `mlflowModelVersion` | Version number                 |
+| `mlflowRunId`        | Training run ID                |
+| `endpoint`           | Inference URL (`/invocations`) |
+| `containerId`        | Docker container ID            |
+| `hostPort`           | Mapped host port               |
+| `dockerHost`         | Docker daemon URI              |
+| `imageName`          | Docker image name              |
+| `deployedAt`         | ISO-8601 deployment timestamp  |
