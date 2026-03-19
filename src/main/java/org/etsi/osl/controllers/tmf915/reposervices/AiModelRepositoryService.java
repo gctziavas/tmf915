@@ -32,9 +32,9 @@ public class AiModelRepositoryService {
         return result;
     }
 
-    public AiModel findAiModelByUuid(String uuid) {
-        log.info("AiModel FIND BY UUID: {}", uuid);
-        return aiModelRepository.findByUuid(uuid).orElse(null);
+    public AiModel findAiModelById(String id) {
+        log.info("AiModel FIND BY ID: {}", id);
+        return aiModelRepository.findById(id).orElse(null);
     }
 
     public AiModel createAiModel(AiModelCreate aiModelCreate) {
@@ -44,25 +44,25 @@ public class AiModelRepositoryService {
         return aiModelRepository.save(aiModel);
     }
 
-    public AiModel updateAiModel(String uuid, AiModelUpdate aiModelUpdate) {
-        log.info("AiModel UPDATE with UUID: {}", uuid);
-        AiModel existing = aiModelRepository.findByUuid(uuid)
-                .orElseThrow(() -> new IllegalArgumentException("No AiModel with UUID: " + uuid));
+    public AiModel updateAiModel(String id, AiModelUpdate aiModelUpdate) {
+        log.info("AiModel UPDATE with ID: {}", id);
+        AiModel existing = aiModelRepository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("No AiModel with ID: " + id));
         AiModelMapper.applyUpdate(existing, aiModelUpdate);
         return aiModelRepository.save(existing);
     }
 
-    public void deleteAiModel(String uuid) {
-        log.info("AiModel DELETE with UUID: {}", uuid);
-        AiModel aiModel = aiModelRepository.findByUuid(uuid)
-                .orElseThrow(() -> new IllegalArgumentException("No AiModel with UUID: " + uuid));
+    public void deleteAiModel(String id) {
+        log.info("AiModel DELETE with ID: {}", id);
+        AiModel aiModel = aiModelRepository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("No AiModel with ID: " + id));
         aiModelRepository.delete(aiModel);
     }
 
-    public AiModel updateAiModelState(String uuid, ServiceStateType state) {
-        log.info("AiModel UPDATE STATE with UUID: {} to {}", uuid, state);
-        AiModel aiModel = aiModelRepository.findByUuid(uuid)
-                .orElseThrow(() -> new IllegalArgumentException("No AiModel with UUID: " + uuid));
+    public AiModel updateAiModelState(String id, ServiceStateType state) {
+        log.info("AiModel UPDATE STATE with ID: {} to {}", id, state);
+        AiModel aiModel = aiModelRepository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("No AiModel with ID: " + id));
         aiModel.setState(state);
         return aiModelRepository.save(aiModel);
     }

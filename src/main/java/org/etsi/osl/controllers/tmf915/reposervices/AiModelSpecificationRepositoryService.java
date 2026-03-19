@@ -31,9 +31,9 @@ public class AiModelSpecificationRepositoryService {
         return result;
     }
 
-    public AiModelSpecification findAiModelSpecificationByUuid(String uuid) {
-        log.info("AiModelSpecification FIND BY UUID: {}", uuid);
-        return aiModelSpecificationRepository.findByUuid(uuid).orElse(null);
+    public AiModelSpecification findAiModelSpecificationById(String id) {
+        log.info("AiModelSpecification FIND BY ID: {}", id);
+        return aiModelSpecificationRepository.findById(id).orElse(null);
     }
 
     public AiModelSpecification findAiModelSpecificationByNameAndVersion(String name, String version) {
@@ -53,18 +53,18 @@ public class AiModelSpecificationRepositoryService {
         return aiModelSpecificationRepository.save(spec);
     }
 
-    public AiModelSpecification updateAiModelSpecification(String uuid, AiModelSpecificationUpdate aiModelSpecUpdate) {
-        log.info("AiModelSpecification UPDATE with UUID: {}", uuid);
-        AiModelSpecification existing = aiModelSpecificationRepository.findByUuid(uuid)
-                .orElseThrow(() -> new IllegalArgumentException("No AiModelSpecification with UUID: " + uuid));
+    public AiModelSpecification updateAiModelSpecification(String id, AiModelSpecificationUpdate aiModelSpecUpdate) {
+        log.info("AiModelSpecification UPDATE with ID: {}", id);
+        AiModelSpecification existing = aiModelSpecificationRepository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("No AiModelSpecification with ID: " + id));
         AiModelSpecificationMapper.applyUpdate(existing, aiModelSpecUpdate);
         return aiModelSpecificationRepository.save(existing);
     }
 
-    public void deleteAiModelSpecification(String uuid) {
-        log.info("AiModelSpecification DELETE with UUID: {}", uuid);
-        AiModelSpecification spec = aiModelSpecificationRepository.findByUuid(uuid)
-                .orElseThrow(() -> new IllegalArgumentException("No AiModelSpecification with UUID: " + uuid));
+    public void deleteAiModelSpecification(String id) {
+        log.info("AiModelSpecification DELETE with ID: {}", id);
+        AiModelSpecification spec = aiModelSpecificationRepository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("No AiModelSpecification with ID: " + id));
         aiModelSpecificationRepository.delete(spec);
     }
 }

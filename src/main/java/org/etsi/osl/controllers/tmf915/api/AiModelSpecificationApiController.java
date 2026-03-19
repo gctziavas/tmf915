@@ -1,27 +1,59 @@
 package org.etsi.osl.controllers.tmf915.api;
 
-import java.util.Optional;
+import java.util.List;
 
-import org.springframework.beans.factory.annotation.Autowired;
+import org.etsi.osl.controllers.tmf915.model.AiModelSpecification;
+import org.etsi.osl.controllers.tmf915.model.AiModelSpecificationCreate;
+import org.etsi.osl.controllers.tmf915.model.AiModelSpecificationUpdate;
+import org.etsi.osl.controllers.tmf915.reposervices.AiModelSpecificationRepositoryService;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.RequestMapping;
 
-import jakarta.annotation.Generated;
-
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-03-18T18:56:23.275173970Z[Etc/UTC]", comments = "Generator version: 7.21.0-SNAPSHOT")
 @Controller
 @RequestMapping("${openapi.aiManagement.base-path:/tmf-api/AiM/v4}")
 public class AiModelSpecificationApiController implements AiModelSpecificationApi {
 
-    private final AiModelSpecificationApiDelegate delegate;
+    private final AiModelSpecificationRepositoryService service;
 
-    public AiModelSpecificationApiController(@Autowired(required = false) AiModelSpecificationApiDelegate delegate) {
-        this.delegate = Optional.ofNullable(delegate).orElse(new AiModelSpecificationApiDelegate() {});
+    public AiModelSpecificationApiController(AiModelSpecificationRepositoryService service) {
+        this.service = service;
     }
 
     @Override
-    public AiModelSpecificationApiDelegate getDelegate() {
-        return delegate;
+    public ResponseEntity<AiModelSpecification> createAiModelSpecification(AiModelSpecificationCreate aiModelSpecification) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(service.createAiModelSpecification(aiModelSpecification));
     }
 
+    @Override
+    public ResponseEntity<Void> deleteAiModelSpecification(String id) {
+        service.deleteAiModelSpecification(id);
+        return ResponseEntity.noContent().build();
+    }
+
+    @Override
+    public ResponseEntity<List<AiModelSpecification>> listAiModelSpecification(@Nullable String fields,
+                                                                                @Nullable Integer offset,
+                                                                                @Nullable Integer limit) {
+        return ResponseEntity.ok(service.findAllAiModelSpecifications());
+    }
+
+    @Override
+    public ResponseEntity<AiModelSpecification> patchAiModelSpecification(String id,
+                                                                           AiModelSpecificationUpdate aiModelSpecification) {
+        AiModelSpecification updated = service.updateAiModelSpecification(id, aiModelSpecification);
+        return ResponseEntity.ok(updated);
+    }
+
+    @Override
+    public ResponseEntity<AiModelSpecification> retrieveAiModelSpecification(String id, @Nullable String fields) {
+        AiModelSpecification found = service.findAiModelSpecificationById(id);
+        if (found == null) {
+            return ResponseEntity.notFound().build();
+        }
+        return ResponseEntity.ok(found);
+    }
 }
+
