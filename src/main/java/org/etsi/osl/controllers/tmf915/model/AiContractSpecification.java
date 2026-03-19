@@ -22,6 +22,13 @@ import org.openapitools.jackson.nullable.JsonNullable;
 import java.time.OffsetDateTime;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.*;
+import jakarta.persistence.Column;
+import jakarta.persistence.Convert;
+import jakarta.persistence.Embedded;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
+import org.etsi.osl.controllers.tmf915.mappers.converters.*;
 import io.swagger.v3.oas.annotations.media.Schema;
 
 
@@ -32,12 +39,16 @@ import jakarta.annotation.Generated;
  * A template of an agreement that can be used when establishing partnerships
  */
 
+@Entity
+@Table(name = "aim915_aicontractspec")
 @Schema(name = "AiContractSpecification", description = "A template of an agreement that can be used when establishing partnerships")
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-03-18T18:56:23.275173970Z[Etc/UTC]", comments = "Generator version: 7.21.0-SNAPSHOT")
 public class AiContractSpecification {
 
+  @Id
   private @Nullable String id;
 
+  @Convert(converter = UriToStringConverter.class)
   private @Nullable URI href;
 
   private @Nullable String description;
@@ -54,26 +65,39 @@ public class AiContractSpecification {
   private @Nullable String version;
 
   @Valid
+  @Convert(converter = AttachmentRefOrValueListConverter.class)
+  @Column(columnDefinition = "TEXT")
   private List<@Valid AttachmentRefOrValue> attachment = new ArrayList<>();
 
   @Valid
+  @Convert(converter = ConstraintRefListConverter.class)
+  @Column(columnDefinition = "TEXT")
   private List<@Valid ConstraintRef> constraint = new ArrayList<>();
 
   @Valid
+  @Convert(converter = EntitySpecificationRelationshipListConverter.class)
+  @Column(columnDefinition = "TEXT")
   private List<@Valid EntitySpecificationRelationship> entitySpecRelationship = new ArrayList<>();
 
   @Valid
+  @Convert(converter = RelatedPartyListConverter.class)
+  @Column(columnDefinition = "TEXT")
   private List<@Valid RelatedParty> relatedParty = new ArrayList<>();
 
   @Valid
+  @Convert(converter = CharacteristicSpecificationListConverter.class)
+  @Column(columnDefinition = "TEXT")
   private List<@Valid CharacteristicSpecification> specCharacteristic = new ArrayList<>();
 
+  @Embedded
   private @Nullable TargetEntitySchema targetEntitySchema;
 
+  @Embedded
   private @Nullable TimePeriod validFor;
 
   private @Nullable String atBaseType;
 
+  @Convert(converter = UriToStringConverter.class)
   private @Nullable URI atSchemaLocation;
 
   private @Nullable String atType;

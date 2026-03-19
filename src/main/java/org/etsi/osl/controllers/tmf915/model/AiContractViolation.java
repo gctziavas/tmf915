@@ -18,6 +18,13 @@ import org.openapitools.jackson.nullable.JsonNullable;
 import java.time.OffsetDateTime;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.*;
+import jakarta.persistence.Column;
+import jakarta.persistence.Convert;
+import jakarta.persistence.Embedded;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
+import org.etsi.osl.controllers.tmf915.mappers.converters.*;
 import io.swagger.v3.oas.annotations.media.Schema;
 
 
@@ -28,9 +35,12 @@ import jakarta.annotation.Generated;
  * AiContractViolation
  */
 
+@Entity
+@Table(name = "aim915_aicontractviolation")
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-03-18T18:56:23.275173970Z[Etc/UTC]", comments = "Generator version: 7.21.0-SNAPSHOT")
 public class AiContractViolation {
 
+  @Id
   private @Nullable String id;
 
   private @Nullable String href;
@@ -38,15 +48,21 @@ public class AiContractViolation {
   @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
   private @Nullable OffsetDateTime date;
 
+  @Embedded
   private @Nullable EntityRef aiContract;
 
   @Valid
+  @Convert(converter = RelatedPartyListConverter.class)
+  @Column(columnDefinition = "TEXT")
   private List<@Valid RelatedParty> relatedParty = new ArrayList<>();
 
+  @Convert(converter = ViolationJsonConverter.class)
+  @Column(columnDefinition = "TEXT")
   private @Nullable Violation violation;
 
   private @Nullable String atBaseType;
 
+  @Convert(converter = UriToStringConverter.class)
   private @Nullable URI atSchemaLocation;
 
   private @Nullable String atType;

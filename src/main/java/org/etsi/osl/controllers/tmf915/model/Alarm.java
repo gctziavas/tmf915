@@ -24,6 +24,14 @@ import org.openapitools.jackson.nullable.JsonNullable;
 import java.time.OffsetDateTime;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.*;
+import jakarta.persistence.Column;
+import jakarta.persistence.Convert;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Enumerated;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
+import org.etsi.osl.controllers.tmf915.mappers.converters.*;
 import io.swagger.v3.oas.annotations.media.Schema;
 
 
@@ -34,12 +42,16 @@ import jakarta.annotation.Generated;
  * This resource represents an alarm supporting the information model defined in ITU-T X.733.
  */
 
+@Entity
+@Table(name = "aim915_alarm")
 @Schema(name = "Alarm", description = "This resource represents an alarm supporting the information model defined in ITU-T X.733.")
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-03-18T18:56:23.275173970Z[Etc/UTC]", comments = "Generator version: 7.21.0-SNAPSHOT")
 public class Alarm {
 
+  @Id
   private @Nullable String id;
 
+  @Convert(converter = UriToStringConverter.class)
   private @Nullable URI href;
 
   private @Nullable String ackState;
@@ -91,30 +103,47 @@ public class Alarm {
   private @Nullable String state;
 
   @Valid
+  @Convert(converter = AffectedServiceListConverter.class)
+  @Column(columnDefinition = "TEXT")
   private List<@Valid AffectedService> affectedService = new ArrayList<>();
 
+  @Enumerated(EnumType.STRING)
   private @Nullable AlarmType alarmType;
 
+  @Convert(converter = AlarmedObjectJsonConverter.class)
+  @Column(columnDefinition = "TEXT")
   private @Nullable AlarmedObject alarmedObject;
 
   @Valid
+  @Convert(converter = CommentListConverter.class)
+  @Column(columnDefinition = "TEXT")
   private List<@Valid Comment> comment = new ArrayList<>();
 
   @Valid
+  @Convert(converter = AlarmRefListConverter.class)
+  @Column(columnDefinition = "TEXT")
   private List<@Valid AlarmRef> correlatedAlarm = new ArrayList<>();
 
+  @Convert(converter = CrossedThresholdInformationJsonConverter.class)
+  @Column(columnDefinition = "TEXT")
   private @Nullable CrossedThresholdInformation crossedThresholdInformation;
 
   @Valid
+  @Convert(converter = AlarmRefListConverter.class)
+  @Column(name = "parent_alarm", columnDefinition = "TEXT")
   private List<@Valid AlarmRef> parentAlarm = new ArrayList<>();
 
+  @Enumerated(EnumType.STRING)
   private @Nullable PerceivedSeverity perceivedSeverity;
 
   @Valid
+  @Convert(converter = RelatedPlaceRefOrValueListConverter.class)
+  @Column(columnDefinition = "TEXT")
   private List<@Valid RelatedPlaceRefOrValue> place = new ArrayList<>();
 
   private @Nullable String atBaseType;
 
+  @Convert(converter = UriToStringConverter.class)
   private @Nullable URI atSchemaLocation;
 
   private @Nullable String atType;

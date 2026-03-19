@@ -2,6 +2,7 @@ package org.etsi.osl.controllers.tmf915.model;
 
 import java.net.URI;
 import java.util.Objects;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import java.net.URI;
@@ -10,6 +11,12 @@ import org.openapitools.jackson.nullable.JsonNullable;
 import java.time.OffsetDateTime;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.*;
+import jakarta.persistence.Column;
+import jakarta.persistence.Convert;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
+import org.etsi.osl.controllers.tmf915.mappers.converters.UriToStringConverter;
 import io.swagger.v3.oas.annotations.media.Schema;
 
 
@@ -20,23 +27,33 @@ import jakarta.annotation.Generated;
  * A Hub is used to subscribe to an event notification
  */
 
+@Entity
+@Table(name = "aim915_hub")
 @Schema(name = "Hub", description = "A Hub is used to subscribe to an event notification")
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-03-18T18:56:23.275173970Z[Etc/UTC]", comments = "Generator version: 7.21.0-SNAPSHOT")
 public class Hub {
 
+  @Id
   private String id;
 
+  @Convert(converter = UriToStringConverter.class)
   private @Nullable URI href;
 
+  @Convert(converter = UriToStringConverter.class)
   private URI callback;
 
   private @Nullable String query;
 
   private @Nullable String atBaseType;
 
+  @Convert(converter = UriToStringConverter.class)
   private @Nullable URI atSchemaLocation;
 
   private @Nullable String atType;
+
+  /** Topic-scoped storage field (not part of API spec). */
+  @Column(name = "topic_id")
+  private String topicId;
 
   public Hub() {
     super();
@@ -195,6 +212,15 @@ public class Hub {
   @JsonProperty("@type")
   public void setAtType(@Nullable String atType) {
     this.atType = atType;
+  }
+
+  @JsonIgnore
+  public String getTopicId() {
+    return topicId;
+  }
+
+  public void setTopicId(String topicId) {
+    this.topicId = topicId;
   }
 
   @Override

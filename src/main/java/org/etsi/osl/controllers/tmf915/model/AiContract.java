@@ -21,6 +21,15 @@ import org.openapitools.jackson.nullable.JsonNullable;
 import java.time.OffsetDateTime;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.*;
+import jakarta.persistence.AttributeOverride;
+import jakarta.persistence.AttributeOverrides;
+import jakarta.persistence.Column;
+import jakarta.persistence.Convert;
+import jakarta.persistence.Embedded;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
+import org.etsi.osl.controllers.tmf915.mappers.converters.*;
 import io.swagger.v3.oas.annotations.media.Schema;
 
 
@@ -31,12 +40,16 @@ import jakarta.annotation.Generated;
  * An Ai Contract represents a contract or arrangement, either written or verbal and sometimes enforceable by law, such as a service level agreement or a customer price agreement. An agreement involves a number of other business entities, such as products, services, and resources and/or their specifications.
  */
 
+@Entity
+@Table(name = "aim915_aicontract")
 @Schema(name = "AiContract", description = "An Ai Contract represents a contract or arrangement, either written or verbal and sometimes enforceable by law, such as a service level agreement or a customer price agreement. An agreement involves a number of other business entities, such as products, services, and resources and/or their specifications.")
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-03-18T18:56:23.275173970Z[Etc/UTC]", comments = "Generator version: 7.21.0-SNAPSHOT")
 public class AiContract {
 
+  @Id
   private @Nullable String id;
 
+  @Convert(converter = UriToStringConverter.class)
   private @Nullable URI href;
 
   @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
@@ -52,25 +65,55 @@ public class AiContract {
 
   private @Nullable String version;
 
+  @Embedded
+  @AttributeOverrides({
+      @AttributeOverride(name="id", column=@Column(name="spec_id")),
+      @AttributeOverride(name="href", column=@Column(name="spec_href")),
+      @AttributeOverride(name="name", column=@Column(name="spec_name")),
+      @AttributeOverride(name="atBaseType", column=@Column(name="spec_base_type")),
+      @AttributeOverride(name="atSchemaLocation", column=@Column(name="spec_schema_loc")),
+      @AttributeOverride(name="atType", column=@Column(name="spec_type")),
+      @AttributeOverride(name="atReferredType", column=@Column(name="spec_referred_type"))
+  })
   private @Nullable EntityRef aiContractSpecification;
 
+  @Embedded
+  @AttributeOverrides({
+      @AttributeOverride(name="id", column=@Column(name="model_id")),
+      @AttributeOverride(name="href", column=@Column(name="model_href")),
+      @AttributeOverride(name="name", column=@Column(name="model_name")),
+      @AttributeOverride(name="atBaseType", column=@Column(name="model_base_type")),
+      @AttributeOverride(name="atSchemaLocation", column=@Column(name="model_schema_loc")),
+      @AttributeOverride(name="atType", column=@Column(name="model_type")),
+      @AttributeOverride(name="atReferredType", column=@Column(name="model_referred_type"))
+  })
   private @Nullable EntityRef aiModel;
 
   @Valid
+  @Convert(converter = CharacteristicListConverter.class)
+  @Column(columnDefinition = "TEXT")
   private List<@Valid Characteristic> characteristic = new ArrayList<>();
 
   @Valid
+  @Convert(converter = RelatedPartyListConverter.class)
+  @Column(columnDefinition = "TEXT")
   private List<@Valid RelatedParty> relatedParty = new ArrayList<>();
 
   @Valid
+  @Convert(converter = RuleListConverter.class)
+  @Column(columnDefinition = "TEXT")
   private List<@Valid Rule> rule = new ArrayList<>();
 
+  @Convert(converter = TemplateRefJsonConverter.class)
+  @Column(columnDefinition = "TEXT")
   private @Nullable TemplateRef template;
 
+  @Embedded
   private @Nullable TimePeriod validFor;
 
   private @Nullable String atBaseType;
 
+  @Convert(converter = UriToStringConverter.class)
   private @Nullable URI atSchemaLocation;
 
   private @Nullable String atType;

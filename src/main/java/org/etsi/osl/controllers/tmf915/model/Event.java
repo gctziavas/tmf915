@@ -2,6 +2,7 @@ package org.etsi.osl.controllers.tmf915.model;
 
 import java.net.URI;
 import java.util.Objects;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import java.net.URI;
@@ -18,6 +19,15 @@ import org.openapitools.jackson.nullable.JsonNullable;
 import java.time.OffsetDateTime;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.*;
+import jakarta.persistence.AttributeOverride;
+import jakarta.persistence.AttributeOverrides;
+import jakarta.persistence.Column;
+import jakarta.persistence.Convert;
+import jakarta.persistence.Embedded;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
+import org.etsi.osl.controllers.tmf915.mappers.converters.*;
 import io.swagger.v3.oas.annotations.media.Schema;
 
 
@@ -28,12 +38,16 @@ import jakarta.annotation.Generated;
  * event with common attributes.
  */
 
+@Entity
+@Table(name = "aim915_event")
 @Schema(name = "Event", description = "event with common attributes.")
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-03-18T18:56:23.275173970Z[Etc/UTC]", comments = "Generator version: 7.21.0-SNAPSHOT")
 public class Event {
 
+  @Id
   private @Nullable String id;
 
+  @Convert(converter = UriToStringConverter.class)
   private @Nullable URI href;
 
   private @Nullable String correlationId;
@@ -57,22 +71,53 @@ public class Event {
   private @Nullable String title;
 
   @Valid
+  @Convert(converter = CharacteristicListConverter.class)
+  @Column(columnDefinition = "TEXT")
   private List<@Valid Characteristic> analyticCharacteristic = new ArrayList<>();
 
+  @Convert(converter = ObjectToJsonConverter.class)
+  @Column(columnDefinition = "TEXT")
   private @Nullable Object event;
 
   @Valid
+  @Convert(converter = RelatedPartyListConverter.class)
+  @Column(columnDefinition = "TEXT")
   private List<@Valid RelatedParty> relatedParty = new ArrayList<>();
 
+  @Embedded
+  @AttributeOverrides({
+      @AttributeOverride(name="id", column=@Column(name="rsys_id")),
+      @AttributeOverride(name="href", column=@Column(name="rsys_href")),
+      @AttributeOverride(name="name", column=@Column(name="rsys_name")),
+      @AttributeOverride(name="atBaseType", column=@Column(name="rsys_base_type")),
+      @AttributeOverride(name="atSchemaLocation", column=@Column(name="rsys_schema_loc")),
+      @AttributeOverride(name="atType", column=@Column(name="rsys_type")),
+      @AttributeOverride(name="atReferredType", column=@Column(name="rsys_referred_type"))
+  })
   private @Nullable EntityRef reportingSystem;
 
+  @Embedded
+  @AttributeOverrides({
+      @AttributeOverride(name="id", column=@Column(name="src_id")),
+      @AttributeOverride(name="href", column=@Column(name="src_href")),
+      @AttributeOverride(name="name", column=@Column(name="src_name")),
+      @AttributeOverride(name="atBaseType", column=@Column(name="src_base_type")),
+      @AttributeOverride(name="atSchemaLocation", column=@Column(name="src_schema_loc")),
+      @AttributeOverride(name="atType", column=@Column(name="src_type")),
+      @AttributeOverride(name="atReferredType", column=@Column(name="src_referred_type"))
+  })
   private @Nullable EntityRef source;
 
   private @Nullable String atBaseType;
 
+  @Convert(converter = UriToStringConverter.class)
   private @Nullable URI atSchemaLocation;
 
   private @Nullable String atType;
+
+  /** Topic-scoped storage field (not part of API spec). */
+  @Column(name = "topic_id")
+  private String topicId;
 
   public Event id(@Nullable String id) {
     this.id = id;
@@ -487,6 +532,15 @@ public class Event {
   @JsonProperty("@type")
   public void setAtType(@Nullable String atType) {
     this.atType = atType;
+  }
+
+  @JsonIgnore
+  public String getTopicId() {
+    return topicId;
+  }
+
+  public void setTopicId(String topicId) {
+    this.topicId = topicId;
   }
 
   @Override

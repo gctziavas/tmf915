@@ -9,6 +9,9 @@ import org.openapitools.jackson.nullable.JsonNullable;
 import java.time.OffsetDateTime;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.*;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
 import io.swagger.v3.oas.annotations.media.Schema;
 
 
@@ -19,10 +22,13 @@ import jakarta.annotation.Generated;
  * Sets the communication endpoint address the service instance must use to deliver notification information
  */
 
+@Entity
+@Table(name = "aim915_eventsub")
 @Schema(name = "EventSubscription", description = "Sets the communication endpoint address the service instance must use to deliver notification information")
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-03-18T18:56:23.275173970Z[Etc/UTC]", comments = "Generator version: 7.21.0-SNAPSHOT")
 public class EventSubscription {
 
+  @Id
   private String id;
 
   private String callback;

@@ -10,6 +10,11 @@ import org.openapitools.jackson.nullable.JsonNullable;
 import java.time.OffsetDateTime;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.*;
+import jakarta.persistence.Convert;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
+import org.etsi.osl.controllers.tmf915.mappers.converters.UriToStringConverter;
 import io.swagger.v3.oas.annotations.media.Schema;
 
 
@@ -20,10 +25,13 @@ import jakarta.annotation.Generated;
  * Is a event channel provided by the Event Streaming API
  */
 
+@Entity
+@Table(name = "aim915_topic")
 @Schema(name = "Topic", description = "Is a event channel provided by the Event Streaming API")
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-03-18T18:56:23.275173970Z[Etc/UTC]", comments = "Generator version: 7.21.0-SNAPSHOT")
 public class Topic {
 
+  @Id
   private @Nullable String id;
 
   private @Nullable String href;
@@ -36,6 +44,7 @@ public class Topic {
 
   private @Nullable String atBaseType;
 
+  @Convert(converter = UriToStringConverter.class)
   private @Nullable URI atSchemaLocation;
 
   private @Nullable String atType;
