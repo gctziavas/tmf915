@@ -12,7 +12,7 @@ import org.etsi.osl.controllers.tmf915.model.AlgorithmParams;
 import org.etsi.osl.controllers.tmf915.model.Consequence;
 import org.etsi.osl.controllers.tmf915.model.Measurement;
 import org.etsi.osl.controllers.tmf915.model.PerformanceAlarmSpecification;
-import org.springframework.lang.Nullable;
+import org.jspecify.annotations.Nullable;
 import org.openapitools.jackson.nullable.JsonNullable;
 import java.time.OffsetDateTime;
 import jakarta.validation.Valid;

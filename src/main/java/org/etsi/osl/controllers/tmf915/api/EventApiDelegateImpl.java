@@ -9,7 +9,6 @@ import org.springframework.stereotype.Service;
 
 import java.util.List;
 
-@Service
 public class EventApiDelegateImpl implements EventApiDelegate {
 
     private final EventRepositoryService eventRepositoryService;

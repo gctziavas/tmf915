@@ -10,7 +10,7 @@ import java.util.List;
 import org.etsi.osl.controllers.tmf915.model.Characteristic;
 import org.etsi.osl.controllers.tmf915.model.ConstraintRef;
 import org.etsi.osl.controllers.tmf915.model.FeatureRelationship;
-import org.springframework.lang.Nullable;
+import org.jspecify.annotations.Nullable;
 import org.openapitools.jackson.nullable.JsonNullable;
 import java.time.OffsetDateTime;
 import jakarta.validation.Valid;

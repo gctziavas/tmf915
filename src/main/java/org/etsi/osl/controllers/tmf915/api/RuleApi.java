@@ -6,7 +6,7 @@
 package org.etsi.osl.controllers.tmf915.api;
 
 import org.etsi.osl.controllers.tmf915.model.Error;
-import org.springframework.lang.Nullable;
+import org.jspecify.annotations.Nullable;
 import org.etsi.osl.controllers.tmf915.model.Rule;
 import org.etsi.osl.controllers.tmf915.model.RuleCreate;
 import org.etsi.osl.controllers.tmf915.model.RuleUpdate;

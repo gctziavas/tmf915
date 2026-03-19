@@ -9,7 +9,6 @@ import org.springframework.stereotype.Service;
 
 import java.util.List;
 
-@Service
 public class AiContractViolationApiDelegateImpl implements AiContractViolationApiDelegate {
 
     private final AiContractViolationRepositoryService aiContractViolationRepositoryService;

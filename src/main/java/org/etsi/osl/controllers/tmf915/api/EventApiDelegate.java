@@ -3,7 +3,7 @@ package org.etsi.osl.controllers.tmf915.api;
 import org.etsi.osl.controllers.tmf915.model.Error;
 import org.etsi.osl.controllers.tmf915.model.Event;
 import org.etsi.osl.controllers.tmf915.model.EventCreate;
-import org.springframework.lang.Nullable;
+import org.jspecify.annotations.Nullable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;

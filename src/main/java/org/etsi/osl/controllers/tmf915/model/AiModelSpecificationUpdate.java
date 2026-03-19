@@ -20,7 +20,7 @@ import org.etsi.osl.controllers.tmf915.model.ServiceLevelSpecificationRef;
 import org.etsi.osl.controllers.tmf915.model.ServiceSpecRelationship;
 import org.etsi.osl.controllers.tmf915.model.TargetEntitySchema;
 import org.etsi.osl.controllers.tmf915.model.TimePeriod;
-import org.springframework.lang.Nullable;
+import org.jspecify.annotations.Nullable;
 import org.openapitools.jackson.nullable.JsonNullable;
 import java.time.OffsetDateTime;
 import jakarta.validation.Valid;

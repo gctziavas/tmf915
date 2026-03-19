@@ -4,7 +4,7 @@ import org.etsi.osl.controllers.tmf915.model.AiModelSpecification;
 import org.etsi.osl.controllers.tmf915.model.AiModelSpecificationCreate;
 import org.etsi.osl.controllers.tmf915.model.AiModelSpecificationUpdate;
 import org.etsi.osl.controllers.tmf915.model.Error;
-import org.springframework.lang.Nullable;
+import org.jspecify.annotations.Nullable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;

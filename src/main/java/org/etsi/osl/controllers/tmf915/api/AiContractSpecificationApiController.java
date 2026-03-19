@@ -4,7 +4,7 @@ import org.etsi.osl.controllers.tmf915.model.AiContractSpecification;
 import org.etsi.osl.controllers.tmf915.model.AiContractSpecificationCreate;
 import org.etsi.osl.controllers.tmf915.model.AiContractSpecificationUpdate;
 import org.etsi.osl.controllers.tmf915.model.Error;
-import org.springframework.lang.Nullable;
+import org.jspecify.annotations.Nullable;
 
 
 import org.springframework.beans.factory.annotation.Autowired;

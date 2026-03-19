@@ -1,7 +1,7 @@
 package org.etsi.osl.controllers.tmf915.api;
 
 import org.etsi.osl.controllers.tmf915.model.Error;
-import org.springframework.lang.Nullable;
+import org.jspecify.annotations.Nullable;
 import org.etsi.osl.controllers.tmf915.model.Topic;
 import org.etsi.osl.controllers.tmf915.model.TopicCreate;
 import org.springframework.http.HttpStatus;

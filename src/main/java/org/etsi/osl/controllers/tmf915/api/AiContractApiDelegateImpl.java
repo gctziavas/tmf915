@@ -6,11 +6,8 @@ import org.etsi.osl.controllers.tmf915.model.AiContractUpdate;
 import org.etsi.osl.controllers.tmf915.reposervices.AiContractRepositoryService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.stereotype.Service;
-
 import java.util.List;
 
-@Service
 public class AiContractApiDelegateImpl implements AiContractApiDelegate {
 
     private final AiContractRepositoryService aiContractRepositoryService;

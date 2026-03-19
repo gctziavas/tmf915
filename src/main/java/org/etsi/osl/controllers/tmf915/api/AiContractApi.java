@@ -12,7 +12,7 @@ import org.etsi.osl.controllers.tmf915.model.AiContractCreate;
 import org.etsi.osl.controllers.tmf915.model.AiContractUpdate;
 import org.etsi.osl.controllers.tmf915.model.Error;
 import org.springframework.http.ResponseEntity;
-import org.springframework.lang.Nullable;
+import org.jspecify.annotations.Nullable;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;

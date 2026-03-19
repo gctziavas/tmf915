@@ -14,7 +14,7 @@ import org.etsi.osl.controllers.tmf915.model.EntityRef;
 import org.etsi.osl.controllers.tmf915.model.RelatedParty;
 import org.etsi.osl.controllers.tmf915.model.Violation;
 import org.springframework.format.annotation.DateTimeFormat;
-import org.springframework.lang.Nullable;
+import org.jspecify.annotations.Nullable;
 import org.openapitools.jackson.nullable.JsonNullable;
 import java.time.OffsetDateTime;
 import jakarta.validation.Valid;

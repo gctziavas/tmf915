@@ -9,7 +9,7 @@ import org.etsi.osl.controllers.tmf915.model.Alarm;
 import org.etsi.osl.controllers.tmf915.model.AlarmCreate;
 import org.etsi.osl.controllers.tmf915.model.AlarmUpdate;
 import org.etsi.osl.controllers.tmf915.model.Error;
-import org.springframework.lang.Nullable;
+import org.jspecify.annotations.Nullable;
 import io.swagger.v3.oas.annotations.ExternalDocumentation;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;

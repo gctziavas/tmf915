@@ -10,7 +10,6 @@ import org.springframework.stereotype.Service;
 
 import java.util.List;
 
-@Service
 public class RuleApiDelegateImpl implements RuleApiDelegate {
 
     private final RuleRepositoryService ruleRepositoryService;
