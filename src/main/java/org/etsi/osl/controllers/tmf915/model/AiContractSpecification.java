@@ -19,6 +19,8 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.annotation.Generated;
+import jakarta.persistence.AttributeOverride;
+import jakarta.persistence.AttributeOverrides;
 import jakarta.persistence.Column;
 import jakarta.persistence.Convert;
 import jakarta.persistence.Embedded;
@@ -63,7 +65,7 @@ public class AiContractSpecification {
 
   @Valid
   @Convert(converter = ConstraintRefListConverter.class)
-  @Column(columnDefinition = "TEXT")
+  @Column(name = "constraint_refs", columnDefinition = "TEXT")
   private List<@Valid ConstraintRef> constraint = new ArrayList<>();
 
   @Valid
@@ -82,6 +84,10 @@ public class AiContractSpecification {
   private List<@Valid CharacteristicSpecification> specCharacteristic = new ArrayList<>();
 
   @Embedded
+  @AttributeOverrides({
+    @AttributeOverride(name = "atSchemaLocation", column = @Column(name = "target_entity_at_schema_location")),
+    @AttributeOverride(name = "atType", column = @Column(name = "target_entity_at_type"))
+  })
   private @Nullable TargetEntitySchema targetEntitySchema;
 
   @Embedded

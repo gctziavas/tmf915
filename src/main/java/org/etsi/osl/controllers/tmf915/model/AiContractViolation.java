@@ -36,6 +36,15 @@ public class AiContractViolation {
   private @Nullable OffsetDateTime date;
 
   @Embedded
+  @AttributeOverrides({
+      @AttributeOverride(name = "id",               column = @Column(name = "aicontract_id")),
+      @AttributeOverride(name = "href",             column = @Column(name = "aicontract_href")),
+      @AttributeOverride(name = "name",             column = @Column(name = "aicontract_name")),
+      @AttributeOverride(name = "atBaseType",       column = @Column(name = "aicontract_base_type")),
+      @AttributeOverride(name = "atSchemaLocation", column = @Column(name = "aicontract_schema_loc")),
+      @AttributeOverride(name = "atType",           column = @Column(name = "aicontract_type")),
+      @AttributeOverride(name = "atReferredType",   column = @Column(name = "aicontract_referred_type"))
+  })
   private @Nullable EntityRef aiContract;
 
   @Valid

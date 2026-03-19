@@ -41,7 +41,7 @@ public class Characteristic {
   private List<@Valid CharacteristicRelationship> characteristicRelationship = new ArrayList<>();
 
   @Convert(converter = ObjectToJsonConverter.class)
-  @Column(columnDefinition = "TEXT")
+  @Column(name = "char_value", columnDefinition = "TEXT")
   private Object value;
 
   private @Nullable String atBaseType;

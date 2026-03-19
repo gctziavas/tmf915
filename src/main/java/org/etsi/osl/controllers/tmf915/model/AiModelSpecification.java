@@ -79,7 +79,7 @@ public class AiModelSpecification {
   private List<@Valid AttachmentRefOrValue> attachment = new ArrayList<>();
 
   @Convert(converter = ConstraintRefListConverter.class)
-  @Column(columnDefinition = "TEXT")
+  @Column(name = "constraint_refs", columnDefinition = "TEXT")
   @Valid
   private List<@Valid ConstraintRef> constraint = new ArrayList<>();
 
