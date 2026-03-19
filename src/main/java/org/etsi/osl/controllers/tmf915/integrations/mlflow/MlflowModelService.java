@@ -240,6 +240,24 @@ public class MlflowModelService {
         return model;
     }
 
+    /**
+     * Removes a Docker image.
+     *
+     * @param imageName Docker image to remove
+     */
+    public void removeImage(String imageName) {
+        removeImage(imageName, null);
+    }
+
+    /**
+     * Removes a Docker image from a specific Docker host.
+     */
+    public void removeImage(String imageName, String dockerHost) {
+        log.info("Removing Docker image: {}", imageName);
+        String targetHost = dockerHost != null ? dockerHost : deploymentService.getDockerHost();
+        deploymentService.removeImage(imageName, targetHost);
+    }
+
     // ========================================
     // Internal helpers
     // ========================================

@@ -338,6 +338,39 @@ public class MlflowDeploymentService {
         }
     }
 
+    // ── Remove Image ────────────────────────────────────────────────────
+
+    /**
+     * Removes a Docker image.
+     *
+     * @param imageName image name to remove
+     * @param targetHost Docker host URI, or null/empty for local
+     * @return true if successful
+     */
+    public boolean removeImage(String imageName, String targetHost) {
+        try {
+            ProcessBuilder pb = new ProcessBuilder("docker", "rmi", "-f", imageName);
+            applyDockerHost(pb.environment(), targetHost);
+            Process process = pb.start();
+            boolean finished = process.waitFor(commandTimeoutSeconds, TimeUnit.SECONDS);
+            if (finished && process.exitValue() == 0) {
+                log.info("Image removed: {}", imageName);
+                return true;
+            }
+            return false;
+        } catch (IOException | InterruptedException e) {
+            log.warn("Failed to remove image {}: {}", imageName, e.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Removes a Docker image from the default Docker host.
+     */
+    public boolean removeImage(String imageName) {
+        return removeImage(imageName, dockerHost);
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────
 
     private void applyDockerHost(Map<String, String> env, String targetHost) {
