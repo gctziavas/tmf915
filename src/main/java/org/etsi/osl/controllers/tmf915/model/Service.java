@@ -1,38 +1,17 @@
 package org.etsi.osl.controllers.tmf915.model;
 
-import java.net.URI;
-import java.util.Objects;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import com.fasterxml.jackson.annotation.JsonCreator;
-import com.fasterxml.jackson.annotation.JsonValue;
+import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.annotation.Generated;
+import jakarta.validation.Valid;
+import org.jspecify.annotations.Nullable;
+import org.springframework.format.annotation.DateTimeFormat;
+
 import java.net.URI;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
-import org.etsi.osl.controllers.tmf915.model.Characteristic;
-import org.etsi.osl.controllers.tmf915.model.Feature;
-import org.etsi.osl.controllers.tmf915.model.Note;
-import org.etsi.osl.controllers.tmf915.model.RelatedEntityRefOrValue;
-import org.etsi.osl.controllers.tmf915.model.RelatedParty;
-import org.etsi.osl.controllers.tmf915.model.RelatedPlaceRefOrValue;
-import org.etsi.osl.controllers.tmf915.model.RelatedServiceOrderItem;
-import org.etsi.osl.controllers.tmf915.model.ResourceRef;
-import org.etsi.osl.controllers.tmf915.model.ServiceRefOrValue;
-import org.etsi.osl.controllers.tmf915.model.ServiceRelationship;
-import org.etsi.osl.controllers.tmf915.model.ServiceSpecificationRef;
-import org.etsi.osl.controllers.tmf915.model.ServiceStateType;
-import org.springframework.format.annotation.DateTimeFormat;
-import org.jspecify.annotations.Nullable;
-import org.openapitools.jackson.nullable.JsonNullable;
-import java.time.OffsetDateTime;
-import jakarta.validation.Valid;
-import jakarta.validation.constraints.*;
-import io.swagger.v3.oas.annotations.media.Schema;
-
-
-import java.util.*;
-import jakarta.annotation.Generated;
+import java.util.Objects;
 
 /**
  * Service is a base class for defining the Service hierarchy. All Services are characterized as either being possibly visible and usable by a Customer or not. This gives rise to the two subclasses of Service: CustomerFacingService and ResourceFacingService.

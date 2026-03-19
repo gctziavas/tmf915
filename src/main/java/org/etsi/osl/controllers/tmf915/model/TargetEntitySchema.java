@@ -1,20 +1,13 @@
 package org.etsi.osl.controllers.tmf915.model;
 
-import java.net.URI;
-import java.util.Objects;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import com.fasterxml.jackson.annotation.JsonCreator;
-import org.jspecify.annotations.Nullable;
-import org.openapitools.jackson.nullable.JsonNullable;
-import java.time.OffsetDateTime;
-import jakarta.persistence.Embeddable;
-import jakarta.validation.Valid;
-import jakarta.validation.constraints.*;
 import io.swagger.v3.oas.annotations.media.Schema;
-
-
-import java.util.*;
 import jakarta.annotation.Generated;
+import jakarta.persistence.Embeddable;
+import jakarta.validation.constraints.NotNull;
+import org.jspecify.annotations.Nullable;
+
+import java.util.Objects;
 
 /**
  * The reference object to the schema and type of target entity which is described by a specification

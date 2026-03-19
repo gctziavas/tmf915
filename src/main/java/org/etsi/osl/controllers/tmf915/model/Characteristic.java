@@ -1,34 +1,21 @@
 package org.etsi.osl.controllers.tmf915.model;
 
-import java.net.URI;
-import java.util.Objects;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import com.fasterxml.jackson.annotation.JsonCreator;
-import java.net.URI;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-import org.etsi.osl.controllers.tmf915.model.CharacteristicRelationship;
-import org.jspecify.annotations.Nullable;
-import org.openapitools.jackson.nullable.JsonNullable;
-import java.time.OffsetDateTime;
-import jakarta.validation.Valid;
-import jakarta.validation.constraints.*;
-import jakarta.persistence.Column;
-import jakarta.persistence.Convert;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
-import jakarta.persistence.Table;
+import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.annotation.Generated;
 import jakarta.persistence.Entity;
+import jakarta.persistence.*;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotNull;
 import org.etsi.osl.controllers.tmf915.mappers.converters.CharacteristicRelationshipListConverter;
 import org.etsi.osl.controllers.tmf915.mappers.converters.ObjectToJsonConverter;
 import org.etsi.osl.controllers.tmf915.mappers.converters.UriToStringConverter;
-import io.swagger.v3.oas.annotations.media.Schema;
+import org.jspecify.annotations.Nullable;
 
-
-import java.util.*;
-import jakarta.annotation.Generated;
+import java.net.URI;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Objects;
 
 /**
  * Describes a given characteristic of an object or entity through a name/value pair.

@@ -1,16 +1,16 @@
 package org.etsi.osl.controllers.tmf915.api;
 
-import java.util.List;
-
 import org.etsi.osl.controllers.tmf915.model.AiModelSpecification;
 import org.etsi.osl.controllers.tmf915.model.AiModelSpecificationCreate;
 import org.etsi.osl.controllers.tmf915.model.AiModelSpecificationUpdate;
 import org.etsi.osl.controllers.tmf915.reposervices.AiModelSpecificationRepositoryService;
+import org.jspecify.annotations.Nullable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.RequestMapping;
+
+import java.util.List;
 
 @Controller
 @RequestMapping("${openapi.aiManagement.base-path:/tmf-api/AiM/v4}")

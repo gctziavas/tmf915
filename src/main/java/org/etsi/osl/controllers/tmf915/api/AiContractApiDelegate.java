@@ -1,8 +1,6 @@
 package org.etsi.osl.controllers.tmf915.api;
 
-import java.util.List;
-import java.util.Optional;
-
+import jakarta.annotation.Generated;
 import org.etsi.osl.controllers.tmf915.model.AiContract;
 import org.etsi.osl.controllers.tmf915.model.AiContractCreate;
 import org.etsi.osl.controllers.tmf915.model.AiContractUpdate;
@@ -11,7 +9,8 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.context.request.NativeWebRequest;
 
-import jakarta.annotation.Generated;
+import java.util.List;
+import java.util.Optional;
 
 /**
  * A delegate to be called by the {@link AiContractApiController}}.

@@ -1,40 +1,20 @@
 package org.etsi.osl.controllers.tmf915.model;
 
-import java.net.URI;
-import java.util.Objects;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import com.fasterxml.jackson.annotation.JsonCreator;
+import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.annotation.Generated;
+import jakarta.persistence.Entity;
+import jakarta.persistence.*;
+import jakarta.validation.Valid;
+import org.etsi.osl.controllers.tmf915.mappers.converters.*;
+import org.jspecify.annotations.Nullable;
+import org.springframework.format.annotation.DateTimeFormat;
+
 import java.net.URI;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
-import org.etsi.osl.controllers.tmf915.model.Characteristic;
-import org.etsi.osl.controllers.tmf915.model.EntityRef;
-import org.etsi.osl.controllers.tmf915.model.RelatedParty;
-import org.etsi.osl.controllers.tmf915.model.Rule;
-import org.etsi.osl.controllers.tmf915.model.TemplateRef;
-import org.etsi.osl.controllers.tmf915.model.TimePeriod;
-import org.springframework.format.annotation.DateTimeFormat;
-import org.jspecify.annotations.Nullable;
-import org.openapitools.jackson.nullable.JsonNullable;
-import java.time.OffsetDateTime;
-import jakarta.validation.Valid;
-import jakarta.validation.constraints.*;
-import jakarta.persistence.AttributeOverride;
-import jakarta.persistence.AttributeOverrides;
-import jakarta.persistence.Column;
-import jakarta.persistence.Convert;
-import jakarta.persistence.Embedded;
-import jakarta.persistence.Entity;
-import jakarta.persistence.Id;
-import jakarta.persistence.Table;
-import org.etsi.osl.controllers.tmf915.mappers.converters.*;
-import io.swagger.v3.oas.annotations.media.Schema;
-
-
-import java.util.*;
-import jakarta.annotation.Generated;
+import java.util.Objects;
 
 /**
  * An Ai Contract represents a contract or arrangement, either written or verbal and sometimes enforceable by law, such as a service level agreement or a customer price agreement. An agreement involves a number of other business entities, such as products, services, and resources and/or their specifications.

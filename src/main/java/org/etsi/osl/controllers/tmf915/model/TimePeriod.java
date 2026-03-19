@@ -1,22 +1,15 @@
 package org.etsi.osl.controllers.tmf915.model;
 
-import java.net.URI;
-import java.util.Objects;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import com.fasterxml.jackson.annotation.JsonCreator;
-import java.time.OffsetDateTime;
-import org.springframework.format.annotation.DateTimeFormat;
-import org.jspecify.annotations.Nullable;
-import org.openapitools.jackson.nullable.JsonNullable;
-import java.time.OffsetDateTime;
+import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.annotation.Generated;
 import jakarta.persistence.Embeddable;
 import jakarta.validation.Valid;
-import jakarta.validation.constraints.*;
-import io.swagger.v3.oas.annotations.media.Schema;
+import org.jspecify.annotations.Nullable;
+import org.springframework.format.annotation.DateTimeFormat;
 
-
-import java.util.*;
-import jakarta.annotation.Generated;
+import java.time.OffsetDateTime;
+import java.util.Objects;
 
 /**
  * A period of time, either as a deadline (endDateTime only) a startDateTime only, or both

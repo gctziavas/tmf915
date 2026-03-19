@@ -5,25 +5,26 @@
  */
 package org.etsi.osl.controllers.tmf915.api;
 
-import org.etsi.osl.controllers.tmf915.model.AiModelSpecification;
-import org.etsi.osl.controllers.tmf915.model.AiModelSpecificationCreate;
-import org.etsi.osl.controllers.tmf915.model.AiModelSpecificationUpdate;
-import org.etsi.osl.controllers.tmf915.model.Error;
-import org.jspecify.annotations.Nullable;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.enums.ParameterIn;
 import io.swagger.v3.oas.annotations.media.ArraySchema;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import io.swagger.v3.oas.annotations.enums.ParameterIn;
+import jakarta.annotation.Generated;
+import jakarta.validation.Valid;
+import org.etsi.osl.controllers.tmf915.model.AiModelSpecification;
+import org.etsi.osl.controllers.tmf915.model.AiModelSpecificationCreate;
+import org.etsi.osl.controllers.tmf915.model.AiModelSpecificationUpdate;
+import org.etsi.osl.controllers.tmf915.model.Error;
+import org.jspecify.annotations.Nullable;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
-import jakarta.validation.Valid;
+
 import java.util.List;
-import jakarta.annotation.Generated;
 
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-03-18T18:56:23.275173970Z[Etc/UTC]", comments = "Generator version: 7.21.0-SNAPSHOT")
 @Validated

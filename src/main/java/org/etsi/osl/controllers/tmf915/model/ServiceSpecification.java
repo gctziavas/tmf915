@@ -1,36 +1,17 @@
 package org.etsi.osl.controllers.tmf915.model;
 
-import java.net.URI;
-import java.util.Objects;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import com.fasterxml.jackson.annotation.JsonCreator;
+import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.annotation.Generated;
+import jakarta.validation.Valid;
+import org.jspecify.annotations.Nullable;
+import org.springframework.format.annotation.DateTimeFormat;
+
 import java.net.URI;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
-import org.etsi.osl.controllers.tmf915.model.AttachmentRefOrValue;
-import org.etsi.osl.controllers.tmf915.model.CharacteristicSpecification;
-import org.etsi.osl.controllers.tmf915.model.ConstraintRef;
-import org.etsi.osl.controllers.tmf915.model.EntitySpecificationRelationship;
-import org.etsi.osl.controllers.tmf915.model.FeatureSpecification;
-import org.etsi.osl.controllers.tmf915.model.RelatedParty;
-import org.etsi.osl.controllers.tmf915.model.ResourceSpecificationRef;
-import org.etsi.osl.controllers.tmf915.model.ServiceLevelSpecificationRef;
-import org.etsi.osl.controllers.tmf915.model.ServiceSpecRelationship;
-import org.etsi.osl.controllers.tmf915.model.TargetEntitySchema;
-import org.etsi.osl.controllers.tmf915.model.TimePeriod;
-import org.springframework.format.annotation.DateTimeFormat;
-import org.jspecify.annotations.Nullable;
-import org.openapitools.jackson.nullable.JsonNullable;
-import java.time.OffsetDateTime;
-import jakarta.validation.Valid;
-import jakarta.validation.constraints.*;
-import io.swagger.v3.oas.annotations.media.Schema;
-
-
-import java.util.*;
-import jakarta.annotation.Generated;
+import java.util.Objects;
 
 /**
  * ServiceSpecification is a class that offers characteristics to describe a type of service. Functionally, it acts as a template by which Services may be instantiated. By sharing the same specification, these services would therefore share the same set of characteristics.

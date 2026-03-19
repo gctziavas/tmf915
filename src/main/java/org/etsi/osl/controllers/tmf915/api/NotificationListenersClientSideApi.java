@@ -5,63 +5,21 @@
  */
 package org.etsi.osl.controllers.tmf915.api;
 
-import org.etsi.osl.controllers.tmf915.model.AiContractAttributeValueChangeEvent;
-import org.etsi.osl.controllers.tmf915.model.AiContractCreateEvent;
-import org.etsi.osl.controllers.tmf915.model.AiContractDeleteEvent;
-import org.etsi.osl.controllers.tmf915.model.AiContractSpecificationAttributeValueChangeEvent;
-import org.etsi.osl.controllers.tmf915.model.AiContractSpecificationCreateEvent;
-import org.etsi.osl.controllers.tmf915.model.AiContractSpecificationDeleteEvent;
-import org.etsi.osl.controllers.tmf915.model.AiContractStateChangeEvent;
-import org.etsi.osl.controllers.tmf915.model.AiContractViolationAttributeValueChangeEvent;
-import org.etsi.osl.controllers.tmf915.model.AiContractViolationCreateEvent;
-import org.etsi.osl.controllers.tmf915.model.AiContractViolationDeleteEvent;
-import org.etsi.osl.controllers.tmf915.model.AiModelAttributeValueChangeEvent;
-import org.etsi.osl.controllers.tmf915.model.AiModelCreateEvent;
-import org.etsi.osl.controllers.tmf915.model.AiModelDeleteEvent;
-import org.etsi.osl.controllers.tmf915.model.AiModelSpecificationAttributeValueChangeEvent;
-import org.etsi.osl.controllers.tmf915.model.AiModelSpecificationCreateEvent;
-import org.etsi.osl.controllers.tmf915.model.AiModelSpecificationDeleteEvent;
-import org.etsi.osl.controllers.tmf915.model.AiModelStateChangeEvent;
-import org.etsi.osl.controllers.tmf915.model.AlarmAttributeValueChangeEvent;
-import org.etsi.osl.controllers.tmf915.model.AlarmCreateEvent;
-import org.etsi.osl.controllers.tmf915.model.AlarmDeleteEvent;
-import org.etsi.osl.controllers.tmf915.model.AlarmStateChangeEvent;
-import org.etsi.osl.controllers.tmf915.model.Error;
-import org.etsi.osl.controllers.tmf915.model.EventCreateEvent;
-import org.etsi.osl.controllers.tmf915.model.EventSubscription;
-import org.etsi.osl.controllers.tmf915.model.MonitorAttributeValueChangeEvent;
-import org.etsi.osl.controllers.tmf915.model.MonitorCreateEvent;
-import org.etsi.osl.controllers.tmf915.model.MonitorDeleteEvent;
-import org.etsi.osl.controllers.tmf915.model.MonitorStateChangeEvent;
-import org.etsi.osl.controllers.tmf915.model.RuleAttributeValueChangeEvent;
-import org.etsi.osl.controllers.tmf915.model.RuleCreateEvent;
-import org.etsi.osl.controllers.tmf915.model.RuleDeleteEvent;
-import org.etsi.osl.controllers.tmf915.model.RuleStateChangeEvent;
-import org.etsi.osl.controllers.tmf915.model.TopicChangeEvent;
-import org.etsi.osl.controllers.tmf915.model.TopicCreateEvent;
-import org.etsi.osl.controllers.tmf915.model.TopicDeleteEvent;
-import io.swagger.v3.oas.annotations.ExternalDocumentation;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
-import io.swagger.v3.oas.annotations.Parameters;
-import io.swagger.v3.oas.annotations.media.ArraySchema;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
-import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import io.swagger.v3.oas.annotations.enums.ParameterIn;
-import io.swagger.v3.oas.annotations.media.ExampleObject;
+import jakarta.annotation.Generated;
+import jakarta.validation.Valid;
+import org.etsi.osl.controllers.tmf915.model.Error;
+import org.etsi.osl.controllers.tmf915.model.*;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
-import org.springframework.web.bind.annotation.*;
-import org.springframework.web.multipart.MultipartFile;
-
-import jakarta.validation.Valid;
-import jakarta.validation.constraints.*;
-import java.util.List;
-import java.util.Map;
-import jakarta.annotation.Generated;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestMethod;
 
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-03-18T18:56:23.275173970Z[Etc/UTC]", comments = "Generator version: 7.21.0-SNAPSHOT")
 @Validated

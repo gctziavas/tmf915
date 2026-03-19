@@ -2,7 +2,6 @@ package org.etsi.osl.controllers.tmf915.repo;
 
 import org.etsi.osl.controllers.tmf915.model.AiModel;
 import org.etsi.osl.controllers.tmf915.model.ServiceStateType;
-
 import org.springframework.data.repository.CrudRepository;
 import org.springframework.data.repository.PagingAndSortingRepository;
 import org.springframework.stereotype.Repository;

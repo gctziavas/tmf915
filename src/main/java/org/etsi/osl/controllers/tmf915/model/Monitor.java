@@ -1,28 +1,17 @@
 package org.etsi.osl.controllers.tmf915.model;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
+import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.annotation.Generated;
+import jakarta.persistence.Entity;
+import jakarta.persistence.*;
+import jakarta.validation.Valid;
+import org.etsi.osl.controllers.tmf915.mappers.converters.RequestJsonConverter;
+import org.etsi.osl.controllers.tmf915.mappers.converters.ResponseJsonConverter;
+import org.jspecify.annotations.Nullable;
+
 import java.net.URI;
 import java.util.Objects;
-import com.fasterxml.jackson.annotation.JsonProperty;
-import com.fasterxml.jackson.annotation.JsonCreator;
-import java.net.URI;
-import org.etsi.osl.controllers.tmf915.model.Request;
-import org.etsi.osl.controllers.tmf915.model.Response;
-import org.jspecify.annotations.Nullable;
-import org.openapitools.jackson.nullable.JsonNullable;
-import java.time.OffsetDateTime;
-import jakarta.validation.Valid;
-import jakarta.validation.constraints.*;
-import jakarta.persistence.Column;
-import jakarta.persistence.Convert;
-import jakarta.persistence.Entity;
-import jakarta.persistence.Id;
-import jakarta.persistence.Table;
-import org.etsi.osl.controllers.tmf915.mappers.converters.*;
-import io.swagger.v3.oas.annotations.media.Schema;
-
-
-import java.util.*;
-import jakarta.annotation.Generated;
 
 /**
  * Monitoring of resources

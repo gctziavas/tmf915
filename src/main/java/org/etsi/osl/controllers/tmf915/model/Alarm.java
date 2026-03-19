@@ -1,42 +1,33 @@
 package org.etsi.osl.controllers.tmf915.model;
 
 import java.net.URI;
-import java.util.Objects;
-import com.fasterxml.jackson.annotation.JsonProperty;
-import com.fasterxml.jackson.annotation.JsonCreator;
-import com.fasterxml.jackson.annotation.JsonValue;
-import java.net.URI;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
-import org.etsi.osl.controllers.tmf915.model.AffectedService;
-import org.etsi.osl.controllers.tmf915.model.AlarmRef;
-import org.etsi.osl.controllers.tmf915.model.AlarmType;
-import org.etsi.osl.controllers.tmf915.model.AlarmedObject;
-import org.etsi.osl.controllers.tmf915.model.Comment;
-import org.etsi.osl.controllers.tmf915.model.CrossedThresholdInformation;
-import org.etsi.osl.controllers.tmf915.model.PerceivedSeverity;
-import org.etsi.osl.controllers.tmf915.model.RelatedPlaceRefOrValue;
-import org.springframework.format.annotation.DateTimeFormat;
+import java.util.Objects;
+
+import org.etsi.osl.controllers.tmf915.mappers.converters.AffectedServiceListConverter;
+import org.etsi.osl.controllers.tmf915.mappers.converters.AlarmRefListConverter;
+import org.etsi.osl.controllers.tmf915.mappers.converters.AlarmedObjectJsonConverter;
+import org.etsi.osl.controllers.tmf915.mappers.converters.CommentListConverter;
+import org.etsi.osl.controllers.tmf915.mappers.converters.CrossedThresholdInformationJsonConverter;
+import org.etsi.osl.controllers.tmf915.mappers.converters.RelatedPlaceRefOrValueListConverter;
+import org.etsi.osl.controllers.tmf915.mappers.converters.UriToStringConverter;
 import org.jspecify.annotations.Nullable;
-import org.openapitools.jackson.nullable.JsonNullable;
-import java.time.OffsetDateTime;
-import jakarta.validation.Valid;
-import jakarta.validation.constraints.*;
+import org.springframework.format.annotation.DateTimeFormat;
+
+import com.fasterxml.jackson.annotation.JsonProperty;
+
+import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.annotation.Generated;
 import jakarta.persistence.Column;
 import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
-import jakarta.persistence.Enumerated;
 import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
-import org.etsi.osl.controllers.tmf915.mappers.converters.*;
-import io.swagger.v3.oas.annotations.media.Schema;
-
-
-import java.util.*;
-import jakarta.annotation.Generated;
+import jakarta.validation.Valid;
 
 /**
  * This resource represents an alarm supporting the information model defined in ITU-T X.733.

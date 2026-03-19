@@ -1,40 +1,20 @@
 package org.etsi.osl.controllers.tmf915.model;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
+import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.annotation.Generated;
+import jakarta.persistence.Entity;
+import jakarta.persistence.*;
+import jakarta.validation.Valid;
+import org.etsi.osl.controllers.tmf915.mappers.converters.*;
+import org.jspecify.annotations.Nullable;
+import org.springframework.format.annotation.DateTimeFormat;
+
 import java.net.URI;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
-
-import org.etsi.osl.controllers.tmf915.mappers.converters.AttachmentRefOrValueListConverter;
-import org.etsi.osl.controllers.tmf915.mappers.converters.ConstraintRefListConverter;
-import org.etsi.osl.controllers.tmf915.mappers.converters.EntitySpecificationRelationshipListConverter;
-import org.etsi.osl.controllers.tmf915.mappers.converters.FeatureSpecificationListConverter;
-import org.etsi.osl.controllers.tmf915.mappers.converters.ObjectToJsonConverter;
-import org.etsi.osl.controllers.tmf915.mappers.converters.RelatedPartyListConverter;
-import org.etsi.osl.controllers.tmf915.mappers.converters.ResourceSpecificationRefListConverter;
-import org.etsi.osl.controllers.tmf915.mappers.converters.ServiceLevelSpecificationRefListConverter;
-import org.etsi.osl.controllers.tmf915.mappers.converters.ServiceSpecRelationshipListConverter;
-import org.etsi.osl.controllers.tmf915.mappers.converters.UriToStringConverter;
-import org.jspecify.annotations.Nullable;
-import org.springframework.format.annotation.DateTimeFormat;
-
-import com.fasterxml.jackson.annotation.JsonProperty;
-
-import io.swagger.v3.oas.annotations.media.Schema;
-import jakarta.annotation.Generated;
-import jakarta.persistence.AttributeOverride;
-import jakarta.persistence.AttributeOverrides;
-import jakarta.persistence.CascadeType;
-import jakarta.persistence.Column;
-import jakarta.persistence.Convert;
-import jakarta.persistence.Embedded;
-import jakarta.persistence.Entity;
-import jakarta.persistence.Id;
-import jakarta.persistence.JoinColumn;
-import jakarta.persistence.OneToMany;
-import jakarta.persistence.Table;
-import jakarta.validation.Valid;
 
 /**
  * AiModelSpecification is a class that offers characteristics to describe a type of service. Functionally, it acts as a template by which Services may be instantiated. By sharing the same  specification, these services would therefore share the same set of characteristics.

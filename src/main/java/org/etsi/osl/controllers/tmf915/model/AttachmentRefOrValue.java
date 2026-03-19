@@ -1,22 +1,13 @@
 package org.etsi.osl.controllers.tmf915.model;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
+import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.annotation.Generated;
+import jakarta.validation.Valid;
+import org.jspecify.annotations.Nullable;
+
 import java.net.URI;
 import java.util.Objects;
-import com.fasterxml.jackson.annotation.JsonProperty;
-import com.fasterxml.jackson.annotation.JsonCreator;
-import java.net.URI;
-import org.etsi.osl.controllers.tmf915.model.Quantity;
-import org.etsi.osl.controllers.tmf915.model.TimePeriod;
-import org.jspecify.annotations.Nullable;
-import org.openapitools.jackson.nullable.JsonNullable;
-import java.time.OffsetDateTime;
-import jakarta.validation.Valid;
-import jakarta.validation.constraints.*;
-import io.swagger.v3.oas.annotations.media.Schema;
-
-
-import java.util.*;
-import jakarta.annotation.Generated;
 
 /**
  * An attachment by value or by reference. An attachment complements the description of an element, for example through a document, a video, a picture.
