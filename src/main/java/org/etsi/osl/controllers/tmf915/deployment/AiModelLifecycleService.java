@@ -8,6 +8,8 @@ import org.etsi.osl.controllers.tmf915.reposervices.AiModelRepositoryService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.OffsetDateTime;
 import java.time.temporal.ChronoUnit;
@@ -50,13 +52,16 @@ public class AiModelLifecycleService {
     private final AiModelRepositoryService repoService;
     private final DeploymentScheduler scheduler;
     private final List<PlatformDeployer> deployers;
+    private final TransactionTemplate txTemplate;
 
     public AiModelLifecycleService(AiModelRepositoryService repoService,
                                    DeploymentScheduler scheduler,
-                                   List<PlatformDeployer> deployers) {
+                                   List<PlatformDeployer> deployers,
+                                   PlatformTransactionManager txManager) {
         this.repoService = repoService;
         this.scheduler = scheduler;
         this.deployers = deployers;
+        this.txTemplate = new TransactionTemplate(txManager);
     }
 
     /**
@@ -123,17 +128,19 @@ public class AiModelLifecycleService {
         log.info("AiModel {} set to INACTIVE – undeploying", id);
         scheduler.cancelScheduled(id);
 
-        AiModel aiModel = repoService.findAiModelById(id);
-        if (aiModel == null) {
-            throw new IllegalArgumentException("No AiModel with ID: " + id);
-        }
+        txTemplate.executeWithoutResult(status -> {
+            AiModel aiModel = repoService.findAiModelById(id);
+            if (aiModel == null) {
+                throw new IllegalArgumentException("No AiModel with ID: " + id);
+            }
 
-        PlatformDeployer deployer = findDeployer(aiModel);
-        if (deployer != null) {
-            deployer.undeploy(aiModel);
-        } else {
-            log.warn("No deployer supports AiModel {} – skipping platform-specific cleanup", id);
-        }
+            PlatformDeployer deployer = findDeployer(aiModel);
+            if (deployer != null) {
+                deployer.undeploy(aiModel);
+            } else {
+                log.warn("No deployer supports AiModel {} – skipping platform-specific cleanup", id);
+            }
+        });
 
         log.info("AiModel {} undeployed and set to TERMINATED", id);
         return repoService.updateAiModelState(id, ServiceStateType.TERMINATED);

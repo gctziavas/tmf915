@@ -90,7 +90,20 @@ public class MlflowDeploymentService {
      * @throws IOException if the build process cannot be started
      */
     public BuildResult buildImage(String runId, String imageName, String targetHost) throws IOException {
-        log.info("Building Docker image '{}' from run {} (env_manager={})", imageName, runId, envManager);
+        return buildImageFromUri("runs:/" + runId + "/model", imageName, targetHost);
+    }
+
+    /**
+     * Builds a Docker image from an explicit model URI (e.g. S3 artifact URI for logged models).
+     *
+     * @param modelUri   MLflow model URI (e.g. "runs:/abc/model" or "s3://bucket/path")
+     * @param imageName  Docker image name
+     * @param targetHost Docker host URI (e.g. "tcp://host:2375"), null for local
+     * @return BuildResult with outcome
+     * @throws IOException if the build process cannot be started
+     */
+    public BuildResult buildImageFromUri(String modelUri, String imageName, String targetHost) throws IOException {
+        log.info("Building Docker image '{}' from URI {} (env_manager={})", imageName, modelUri, envManager);
 
         // Try configured env-manager, fallback to virtualenv if "local" fails
         String[] managersToTry = "local".equals(envManager)
@@ -104,7 +117,7 @@ public class MlflowDeploymentService {
             cmd.add("models");
             cmd.add("build-docker");
             cmd.add("--model-uri");
-            cmd.add("runs:/" + runId + "/model");
+            cmd.add(modelUri);
             cmd.add("--name");
             cmd.add(imageName);
             cmd.add("--env-manager");
@@ -127,7 +140,7 @@ public class MlflowDeploymentService {
                 }
                 if (process.exitValue() == 0) {
                     log.info("Docker image '{}' built successfully (env_manager={})", imageName, mgr);
-                    return new BuildResult(imageName, runId, targetHost, true,
+                    return new BuildResult(imageName, modelUri, targetHost, true,
                             "Docker image built successfully (env_manager=" + mgr + ")");
                 }
                 String stderr = new String(process.getErrorStream().readAllBytes());
@@ -142,7 +155,7 @@ public class MlflowDeploymentService {
 
         String msg = "Build failed: " + (lastError != null ? lastError.getMessage() : "unknown error");
         log.error(msg);
-        return new BuildResult(imageName, runId, targetHost, false, msg);
+        return new BuildResult(imageName, modelUri, targetHost, false, msg);
     }
 
     /**

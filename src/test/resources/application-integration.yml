@@ -1,0 +1,40 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    username: sa
+    password:
+    driver-class-name: org.h2.Driver
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: true
+    database-platform: org.hibernate.dialect.H2Dialect
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: http://localhost
+
+mlflow:
+  enabled: true
+  tracking-uri: "http://172.16.100.94:5000"
+  connection-timeout: 30000
+  read-timeout: 60000
+  s3-endpoint-url: "http://172.16.100.94:9000"
+  s3-access-key: "minioadmin"
+  s3-secret-key: "minioadmin"
+  sync:
+    enabled: false
+    interval-ms: 60000
+    base-url: ""
+  docker:
+    host: "tcp://172.16.100.94:2375"
+    container-port: 8080
+    host-port-start: 5100
+    host-port-end: 5200
+    env-manager: "local"
+    command-timeout-seconds: 60
+
+logging:
+  level:
+    org.etsi.osl.controllers.tmf915: DEBUG

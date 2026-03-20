@@ -37,11 +37,23 @@ public class MlflowDeployer implements PlatformDeployer {
 
     @Override
     public void deploy(AiModel model) throws IOException {
+        // Try new Logged Models path first (mlflowModelId characteristic)
+        String modelId = getCharacteristicValue(model, "mlflowModelId");
+        if (modelId != null) {
+            String runId = getCharacteristicValue(model, "mlflowRunId");
+            log.info("Deploying AiModel {} via MLflow logged model (modelId={}, runId={})",
+                    model.getId(), modelId, runId);
+            mlflowModelService.buildAndDeployFromLoggedModel(model, modelId, null, null);
+            log.info("AiModel {} deployed successfully", model.getId());
+            return;
+        }
+
+        // Fall back to classic Model Registry path (mlflowModelName/mlflowModelVersion)
         String name = getCharacteristicValue(model, "mlflowModelName");
         String version = getCharacteristicValue(model, "mlflowModelVersion");
         if (name == null || version == null) {
             throw new IOException("AiModel " + model.getId()
-                    + " is missing mlflowModelName/mlflowModelVersion characteristics");
+                    + " is missing mlflowModelId or mlflowModelName/mlflowModelVersion characteristics");
         }
         log.info("Deploying AiModel {} via MLflow (model={}, version={})", model.getId(), name, version);
         mlflowModelService.buildAndDeployFromModel(model, name, version, null, null);

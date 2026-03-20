@@ -4,7 +4,7 @@ info:
   title: Ai Management
   version: 4.0.0
 servers:
-- url: https://serverRoot/tmf-api/AiM/v4/
+- url: /tmf-api/AiM/v4/
 tags:
 - name: aiContractSpecification
 - name: aiModel

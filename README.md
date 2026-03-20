@@ -199,6 +199,109 @@ aim915_aimspec (1) ──< aim915_charspec  (many)   [specCharacteristic]
 
 ---
 
+## Deployment & Lifecycle
+
+The `deployment` package provides a platform-agnostic deployment engine that manages
+AiModel lifecycle state transitions, scheduled deployment/undeployment, and crash recovery.
+Platform-specific work (Docker builds, container management, etc.) is delegated to
+`PlatformDeployer` implementations — one per integration.
+
+### Architecture
+
+```
+                     TMF 915 REST API
+                           │
+                           ▼
+                  ┌────────────────────┐
+                  │  AiModelApi        │
+                  │  Controller        │
+                  └────────┬───────────┘
+                           │
+                           ▼
+              ┌────────────────────────────┐
+              │  AiModelLifecycleService   │   deployment/
+              │                            │
+              │  State validation           │
+              │  Default startDate/endDate  │
+              │  Delegates to scheduler     │
+              └─────────────┬──────────────┘
+                            │
+                            ▼
+              ┌────────────────────────────┐
+              │  DeploymentScheduler       │   deployment/
+              │                            │
+              │  ScheduledExecutorService   │
+              │  Startup recovery           │
+              │  Task tracking              │
+              └─────────────┬──────────────┘
+                            │  finds via supports()
+          ┌─────────────────┼─────────────────┐
+          ▼                                   ▼
+┌──────────────────┐                ┌──────────────────┐
+│  MlflowDeployer  │                │  (Future)        │
+│                  │                │  OnnxDeployer    │
+│  implements      │                │  KServeDeployer  │
+│  PlatformDeployer│                │  …               │
+└────────┬─────────┘                └──────────────────┘
+         │
+         ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│                     integrations/mlflow/                              │
+│                                                                      │
+│  ┌─────────────────┐  ┌──────────────────┐  ┌────────────────────┐  │
+│  │ MlflowModel     │  │ MlflowDeployment │  │ MlflowClient       │  │
+│  │ Service          │  │ Service          │  │ Service            │  │
+│  │                  │  │                  │  │                    │  │
+│  │ build + deploy   │  │ Docker CLI       │  │ MLflow Java client │  │
+│  │ orchestration    │  │ subprocesses     │  │ (v2.11.1)          │  │
+│  └──────────────────┘  └──────────────────┘  └────────────────────┘  │
+│                                                                      │
+│  ┌─────────────────┐  ┌──────────────────┐  ┌────────────────────┐  │
+│  │ MlflowSync      │  │ MlflowSpec       │  │ MlflowConfiguration│  │
+│  │ Service          │  │ Service          │  │                    │  │
+│  └─────────────────┘  └──────────────────┘  └────────────────────┘  │
+└──────────────────────────────────────────────────────────────────────┘
+```
+
+### Deployment Package (platform-agnostic)
+
+
+| Class                      | Responsibility                                                                                                                                           |
+| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PlatformDeployer`          | Interface — `supports(AiModel)`, `deploy(AiModel)`, `undeploy(AiModel)`. Each integration implements this.                                              |
+| `DeploymentScheduler`       | Schedules deploy/undeploy via `ScheduledExecutorService` (4 daemon threads). Tracks tasks, supports cancellation. Recovers RESERVED and ACTIVE models on startup. |
+| `AiModelLifecycleService`   | Orchestrates create/update/delete with state validation. Rejects forbidden create states. Applies default `startDate`/`endDate`. Delegates to scheduler + deployers. |
+
+### Adding a New Platform
+
+1. Create a class implementing `PlatformDeployer` under `integrations/yourplatform/`
+2. Mark it with `@Service` and `@ConditionalOnProperty` gated on your config key
+3. Set the `platform` characteristic on the AiModel to match your `supports()` check
+
+No changes to the scheduler, lifecycle service, or controller are needed.
+
+### Lifecycle State Machine
+
+```
+POST /aiModel                        PATCH state=reserved          endDate reached
+    │                                     │                             │
+    ▼                                     ▼                             ▼
+ DESIGNED ──────────────────────▶ RESERVED ──────────▶ ACTIVE ──────▶ TERMINATED
+                                  (startDate)         (running)       (cleaned up)
+                                     │                    │
+                                     │     PATCH state=inactive
+                                     │                    │
+                                     ▼                    ▼
+                                 TERMINATED          TERMINATED
+                                 (cancelled)         (user-initiated)
+```
+
+- **Forbidden create states:** ACTIVE, INACTIVE, TERMINATED
+- **Default dates:** `startDate` = now, `endDate` = `startDate` + 1 day
+- **Startup recovery:** RESERVED models re-scheduled, ACTIVE models with `endDate` get teardown re-scheduled
+
+---
+
 ## MLflow Integration
 
 The `org.etsi.osl.controllers.tmf915.integrations.mlflow` package bridges
@@ -206,56 +309,18 @@ The `org.etsi.osl.controllers.tmf915.integrations.mlflow` package bridges
 It provides automatic discovery of MLflow models, conversion to TMF 915 entities,
 and Docker-based model serving — all driven by configuration.
 
-### Architecture
-
-```
-┌──────────────────────────────────────────────────────────────────────┐
-│                          MLflow Server                               │
-│  ┌─────────────────┐   ┌─────────────────┐   ┌────────────────────┐ │
-│  │ Registered Model │   │  Model Version   │   │     Run / Exp     │ │
-│  └────────┬────────┘   └────────┬─────────┘   └────────┬──────────┘ │
-└───────────┼──────────────────────┼──────────────────────┼────────────┘
-            │                      │                      │
-            ▼                      ▼                      ▼
-┌──────────────────────────────────────────────────────────────────────┐
-│                       MlflowClientService                            │
-│  Thin wrapper around the MLflow Java client (v2.11.1).               │
-│  All calls return Optional / List; handles pagination internally.    │
-└───────────────────────────┬──────────────────────────────────────────┘
-                            │
-          ┌─────────────────┼─────────────────┐
-          ▼                 ▼                 ▼
-┌──────────────┐  ┌─────────────────┐  ┌──────────────────┐
-│  MlflowSync  │  │  MlflowSpec     │  │  MlflowModel     │
-│  Service     │  │  Service        │  │  Service          │
-│              │  │                 │  │                   │
-│ Scheduled    │─▶│ MLflow model →  │  │ RESERVED → ACTIVE │
-│ polling loop │  │ AiModelSpec     │  │ → TERMINATED      │
-│              │  │ conversion      │  │ lifecycle          │
-└──────────────┘  └─────────────────┘  └────────┬──────────┘
-                                                │
-                                                ▼
-                                       ┌────────────────────┐
-                                       │  MlflowDeployment  │
-                                       │  Service            │
-                                       │                    │
-                                       │ build-docker →     │
-                                       │ docker run →       │
-                                       │ docker stop        │
-                                       └────────────────────┘
-```
-
 ### Services
 
 
 | Class                        | Responsibility                                                                                                                                                                    |
 | ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `MlflowConfiguration`        | Creates the`MlflowClient` bean from `mlflow.tracking-uri`.                                                                                                                        |
-| `MlflowClientService`        | Wraps the MLflow Java client with`Optional`-based returns, automatic pagination, and exception handling.                                                                          |
-| `MlflowSpecificationService` | Converts an MLflow registered model + version into an`AiModelSpecificationCreate` (the TMF 915 "blueprint"). Extracts metadata, metrics, framework info, tags, and artifact URLs. |
+| `MlflowConfiguration`        | Creates the `MlflowClient` bean from `mlflow.tracking-uri`.                                                                                                                       |
+| `MlflowClientService`        | Wraps the MLflow Java client with `Optional`-based returns, automatic pagination, and exception handling.                                                                         |
+| `MlflowSpecificationService` | Converts an MLflow registered model + version into an `AiModelSpecificationCreate` (the TMF 915 "blueprint"). Extracts metadata, metrics, framework info, tags, and artifact URLs. |
 | `MlflowSyncService`          | **Scheduled job** — periodically polls MLflow for all model versions and creates any missing `AiModelSpecification` records.                                                     |
-| `MlflowModelService`         | Manages the`AiModel` lifecycle (RESERVED → ACTIVE → TERMINATED). Orchestrates image build + container deploy.                                                                   |
-| `MlflowDeploymentService`    | Executes Docker CLI commands via`ProcessBuilder` (mirrors the Python `mlflow_model_image_builder` pattern). Builds images, runs/stops containers, scans port ranges.              |
+| `MlflowModelService`         | Orchestrates image build + container deploy (called by `MlflowDeployer`).                                                                                                        |
+| `MlflowDeploymentService`    | Executes Docker CLI commands via `ProcessBuilder` (mirrors the Python `mlflow_model_image_builder` pattern). Builds images, runs/stops containers, scans port ranges.             |
+| `MlflowDeployer`             | Implements `PlatformDeployer`. Bridges the platform-agnostic scheduler to MLflow-specific build/deploy/undeploy operations.                                                      |
 
 ### TMF 915 Entity Mapping
 
@@ -276,18 +341,19 @@ When `mlflow.sync.enabled=true`, the `MlflowSyncService` runs a scheduled task t
 
 New models registered in MLflow are discovered automatically — no manual API calls needed.
 
-### Deployment Lifecycle
+### Deployment Lifecycle (MLflow-specific)
 
 Deploying a model follows the Python `mlflow_model_image_builder` pattern:
 
 ```
-1. createReservedAiModel()          →  AiModel in RESERVED state
-2. buildAndDeploy() / buildAndDeployFromModel()
+1. MlflowDeployer.deploy(aiModel)
    ├─ imageExists()?                →  skip build if image cached
    ├─ buildImage()                  →  mlflow models build-docker
    ├─ deployContainer()             →  docker run -d -p host:container image
    └─ activate AiModel              →  ACTIVE state + endpoint characteristic
-3. stopAndTerminate()               →  docker stop + TERMINATED state
+2. MlflowDeployer.undeploy(aiModel)
+   ├─ stopContainer()               →  docker stop + docker rm
+   └─ removeImage()                 →  docker rmi -f
 ```
 
 All Docker commands are executed as subprocesses with the `DOCKER_HOST` environment variable,
@@ -372,3 +438,61 @@ mlflow:
 | `dockerHost`         | Docker daemon URI              |
 | `imageName`          | Docker image name              |
 | `deployedAt`         | ISO-8601 deployment timestamp  |
+
+---
+
+## Prerequisites
+
+### Build & Runtime
+
+| Dependency | Version | Notes |
+|---|---|---|
+| Java (JDK) | 17+ | Compile and run target |
+| Maven | 3.9+ | Build tool |
+| Spring Boot | 4.0.3 | Framework (managed via `pom.xml`) |
+| MLflow Java Client | 2.11.1 | Included as Maven dependency |
+
+### MLflow Deployment (Docker-based serving)
+
+The `mlflow models build-docker` CLI command is used to build Docker images for model
+serving. This requires a local Python environment with the MLflow CLI installed.
+
+| Dependency | Version | Notes |
+|---|---|---|
+| Python | 3.10+ | Required for `mlflow` CLI |
+| MLflow (Python) | 3.x | CLI tool: `mlflow models build-docker` |
+| boto3 | latest | Required when MLflow artifacts are stored in S3/MinIO |
+| Docker CLI | 29+ | Must match the remote Docker Engine API version |
+| Docker Engine | 29+ | Local or remote (`DOCKER_HOST`) |
+
+#### Python Environment Setup
+
+Create a virtual environment at the project root (used by integration tests and
+the `mlflow models build-docker` command):
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install mlflow boto3
+```
+
+When running the application or tests, ensure the venv is on `PATH` so that
+`ProcessBuilder` can find the `mlflow` CLI:
+
+```bash
+export PATH="$(pwd)/.venv/bin:$PATH"
+```
+
+### Running Tests
+
+```bash
+# Unit tests only (no external services needed)
+mvn test
+
+# All tests (unit + integration — requires MLflow server, S3/MinIO, Docker)
+PATH="$(pwd)/.venv/bin:$PATH" mvn test -Dspring.profiles.active=integration
+```
+
+Integration tests connect to the services configured in
+`src/test/resources/application.yml` under the `integration` profile
+(MLflow tracking server, MinIO S3, remote Docker daemon).

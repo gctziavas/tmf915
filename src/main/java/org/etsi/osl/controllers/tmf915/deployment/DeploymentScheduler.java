@@ -8,6 +8,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import jakarta.annotation.PreDestroy;
 import java.io.IOException;
@@ -51,11 +53,14 @@ public class DeploymentScheduler {
 
     private final List<PlatformDeployer> deployers;
     private final AiModelRepositoryService repoService;
+    private final TransactionTemplate txTemplate;
 
     public DeploymentScheduler(List<PlatformDeployer> deployers,
-                               AiModelRepositoryService repoService) {
+                               AiModelRepositoryService repoService,
+                               PlatformTransactionManager txManager) {
         this.deployers = deployers;
         this.repoService = repoService;
+        this.txTemplate = new TransactionTemplate(txManager);
     }
 
     // ── Startup recovery ────────────────────────────────────────────────
@@ -76,29 +81,35 @@ public class DeploymentScheduler {
 
         log.info("Recovering scheduled deployments after restart…");
 
-        List<AiModel> reserved = repoService.findByState(ServiceStateType.RESERVED);
-        for (AiModel model : reserved) {
-            if (findDeployer(model) != null) {
-                log.info("Re-scheduling deployment for RESERVED AiModel {} (startDate={})",
-                        model.getId(), model.getStartDate());
-                scheduleDeploy(model);
-            } else {
-                log.warn("RESERVED AiModel {} has no matching deployer – skipping recovery", model.getId());
+        try {
+            txTemplate.executeWithoutResult(status -> {
+            List<AiModel> reserved = repoService.findByState(ServiceStateType.RESERVED);
+            for (AiModel model : reserved) {
+                if (findDeployer(model) != null) {
+                    log.info("Re-scheduling deployment for RESERVED AiModel {} (startDate={})",
+                            model.getId(), model.getStartDate());
+                    scheduleDeploy(model);
+                } else {
+                    log.warn("RESERVED AiModel {} has no matching deployer – skipping recovery", model.getId());
+                }
             }
-        }
 
-        List<AiModel> active = repoService.findByState(ServiceStateType.ACTIVE);
-        long teardowns = 0;
-        for (AiModel model : active) {
-            OffsetDateTime endDate = model.getEndDate();
-            if (endDate == null) continue;
-            log.info("Re-scheduling teardown for ACTIVE AiModel {} (endDate={})", model.getId(), endDate);
-            scheduleUndeploy(model.getId(), endDate);
-            teardowns++;
-        }
+            List<AiModel> active = repoService.findByState(ServiceStateType.ACTIVE);
+            long teardowns = 0;
+            for (AiModel model : active) {
+                OffsetDateTime endDate = model.getEndDate();
+                if (endDate == null) continue;
+                log.info("Re-scheduling teardown for ACTIVE AiModel {} (endDate={})", model.getId(), endDate);
+                scheduleUndeploy(model.getId(), endDate);
+                teardowns++;
+            }
 
-        log.info("Recovery complete: {} RESERVED re-scheduled, {} ACTIVE teardowns re-scheduled",
-                reserved.size(), teardowns);
+            log.info("Recovery complete: {} RESERVED re-scheduled, {} ACTIVE teardowns re-scheduled",
+                    reserved.size(), teardowns);
+            });
+        } catch (Exception e) {
+            log.warn("Startup recovery skipped (database tables may not exist yet): {}", e.getMessage());
+        }
     }
 
     // ── Public API ──────────────────────────────────────────────────────
@@ -163,26 +174,28 @@ public class DeploymentScheduler {
     // ── Internal ────────────────────────────────────────────────────────
 
     private AiModel executeDeployment(String aiModelId) {
-        AiModel aiModel = repoService.findAiModelById(aiModelId);
-        if (aiModel == null) {
-            log.warn("AiModel {} no longer exists – skipping deployment", aiModelId);
-            return null;
-        }
+        return txTemplate.execute(status -> {
+            AiModel aiModel = repoService.findAiModelById(aiModelId);
+            if (aiModel == null) {
+                log.warn("AiModel {} no longer exists – skipping deployment", aiModelId);
+                return null;
+            }
 
-        PlatformDeployer deployer = findDeployer(aiModel);
-        if (deployer == null) {
-            log.warn("No deployer supports AiModel {} – skipping deployment", aiModelId);
-            return aiModel;
-        }
+            PlatformDeployer deployer = findDeployer(aiModel);
+            if (deployer == null) {
+                log.warn("No deployer supports AiModel {} – skipping deployment", aiModelId);
+                return aiModel;
+            }
 
-        try {
-            deployer.deploy(aiModel);
-            return repoService.findAiModelById(aiModelId);
-        } catch (IOException e) {
-            log.error("Scheduled deployment failed for AiModel {}: {}", aiModelId, e.getMessage());
-            repoService.updateAiModelState(aiModelId, ServiceStateType.DESIGNED);
-            return aiModel;
-        }
+            try {
+                deployer.deploy(aiModel);
+                return repoService.findAiModelById(aiModelId);
+            } catch (IOException e) {
+                log.error("Scheduled deployment failed for AiModel {}: {}", aiModelId, e.getMessage());
+                repoService.updateAiModelState(aiModelId, ServiceStateType.DESIGNED);
+                return aiModel;
+            }
+        });
     }
 
     private void scheduleUndeploy(String aiModelId, OffsetDateTime endDate) {
@@ -206,25 +219,27 @@ public class DeploymentScheduler {
     }
 
     private void executeUndeploy(String aiModelId) {
-        AiModel aiModel = repoService.findAiModelById(aiModelId);
-        if (aiModel == null) {
-            log.warn("AiModel {} no longer exists – skipping undeployment", aiModelId);
-            return;
-        }
-        if (aiModel.getState() != ServiceStateType.ACTIVE) {
-            log.info("AiModel {} is not ACTIVE (state={}) – skipping undeployment", aiModelId, aiModel.getState());
-            return;
-        }
+        txTemplate.executeWithoutResult(status -> {
+            AiModel aiModel = repoService.findAiModelById(aiModelId);
+            if (aiModel == null) {
+                log.warn("AiModel {} no longer exists – skipping undeployment", aiModelId);
+                return;
+            }
+            if (aiModel.getState() != ServiceStateType.ACTIVE) {
+                log.info("AiModel {} is not ACTIVE (state={}) – skipping undeployment", aiModelId, aiModel.getState());
+                return;
+            }
 
-        PlatformDeployer deployer = findDeployer(aiModel);
-        if (deployer != null) {
-            deployer.undeploy(aiModel);
-        } else {
-            log.warn("No deployer supports AiModel {} – cannot undeploy cleanly", aiModelId);
-        }
+            PlatformDeployer deployer = findDeployer(aiModel);
+            if (deployer != null) {
+                deployer.undeploy(aiModel);
+            } else {
+                log.warn("No deployer supports AiModel {} – cannot undeploy cleanly", aiModelId);
+            }
 
-        repoService.updateAiModelState(aiModelId, ServiceStateType.TERMINATED);
-        log.info("AiModel {} undeployed and set to TERMINATED (endDate reached)", aiModelId);
+            repoService.updateAiModelState(aiModelId, ServiceStateType.TERMINATED);
+            log.info("AiModel {} undeployed and set to TERMINATED (endDate reached)", aiModelId);
+        });
     }
 
     private PlatformDeployer findDeployer(AiModel model) {
