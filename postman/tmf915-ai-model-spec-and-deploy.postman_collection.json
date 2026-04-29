@@ -1,0 +1,306 @@
+{
+  "info": {
+    "_postman_id": "3d4d13cd-95a0-4a4e-9549-34f3f4ed8b01",
+    "name": "TMF915 - List AI Model Specifications and Deploy",
+    "description": "Collection to list existing AI model specifications and deploy an AI model from a selected specification.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:13082/tmf-api/tmf-api/AiM/v4"
+    },
+    {
+      "key": "keycloakBaseUrl",
+      "value": "http://localhost:8080/auth"
+    },
+    {
+      "key": "realm",
+      "value": "openslice"
+    },
+    {
+      "key": "clientId",
+      "value": "osapiWebClientId"
+    },
+    {
+      "key": "username",
+      "value": "admin"
+    },
+    {
+      "key": "password",
+      "value": "openslice"
+    },
+    {
+      "key": "access_token",
+      "value": ""
+    },
+    {
+      "key": "listLimit",
+      "value": "50"
+    },
+    {
+      "key": "selectedAiModelSpecificationId",
+      "value": ""
+    },
+    {
+      "key": "selectedAiModelSpecification",
+      "value": "{\"id\":\"replace-with-spec-id\"}"
+    },
+    {
+      "key": "deployedModelName",
+      "value": ""
+    },
+    {
+      "key": "softwareId",
+      "value": "mlflow-runtime"
+    },
+    {
+      "key": "softwareName",
+      "value": "MLflow"
+    },
+    {
+      "key": "softwareVersion",
+      "value": "2.11.1"
+    },
+    {
+      "key": "deployedAiModelId",
+      "value": ""
+    },
+    {
+      "key": "dockerHost",
+      "value": "tcp://YOUR_DOCKER_HOST:2375"
+    }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{access_token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "item": [
+    {
+      "name": "1. Optional - Get Keycloak Access Token",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Token response status is 200', function () {",
+              "  pm.response.to.have.status(200);",
+              "});",
+              "",
+              "pm.test('Response includes access token', function () {",
+              "  var responseJson = pm.response.json();",
+              "  pm.expect(responseJson).to.have.property('access_token');",
+              "  pm.expect(responseJson.access_token).to.be.a('string').and.not.empty;",
+              "  pm.collectionVariables.set('access_token', responseJson.access_token);",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "auth": {
+          "type": "noauth"
+        },
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/x-www-form-urlencoded"
+          }
+        ],
+        "body": {
+          "mode": "urlencoded",
+          "urlencoded": [
+            {
+              "key": "grant_type",
+              "value": "password",
+              "type": "text"
+            },
+            {
+              "key": "client_id",
+              "value": "{{clientId}}",
+              "type": "text"
+            },
+            {
+              "key": "username",
+              "value": "{{username}}",
+              "type": "text"
+            },
+            {
+              "key": "password",
+              "value": "{{password}}",
+              "type": "text"
+            }
+          ]
+        },
+        "url": {
+          "raw": "{{keycloakBaseUrl}}/realms/{{realm}}/protocol/openid-connect/token",
+          "host": [
+            "{{keycloakBaseUrl}}"
+          ],
+          "path": [
+            "realms",
+            "{{realm}}",
+            "protocol",
+            "openid-connect",
+            "token"
+          ]
+        },
+        "description": "Optional when TMF API is permit-all. Run this first if your API deployment requires authentication."
+      },
+      "response": []
+    },
+    {
+      "name": "2. List Existing AI Model Specifications",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('List specifications status is 200', function () {",
+              "  pm.response.to.have.status(200);",
+              "});",
+              "",
+              "pm.test('Response is an array of AI model specifications', function () {",
+              "  var responseJson = pm.response.json();",
+              "  pm.expect(responseJson).to.be.an('array');",
+              "  if (responseJson.length > 0) {",
+              "    pm.expect(responseJson[0]).to.have.property('id');",
+              "    pm.collectionVariables.set('selectedAiModelSpecificationId', responseJson[0].id);",
+              "    pm.collectionVariables.set('selectedAiModelSpecification', JSON.stringify(responseJson[0]));",
+              "  }",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json;charset=utf-8"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/aiModelSpecification?limit={{listLimit}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "aiModelSpecification"
+          ],
+          "query": [
+            {
+              "key": "limit",
+              "value": "{{listLimit}}"
+            }
+          ]
+        },
+        "description": "Fetches existing AI model specifications and stores the first one into collection variables for deployment."
+      },
+      "response": []
+    },
+    {
+      "name": "3. Deploy AI Model From Selected Specification",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Deploy AI model status is 201', function () {",
+              "  pm.response.to.have.status(201);",
+              "});",
+              "",
+              "pm.test('Created AI model includes id and linked specification', function () {",
+              "  var responseJson = pm.response.json();",
+              "  pm.expect(responseJson).to.have.property('id');",
+              "  pm.collectionVariables.set('deployedAiModelId', responseJson.id);",
+              "  pm.expect(responseJson).to.have.property('aiModelSpecification');",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json;charset=utf-8"
+          },
+          {
+            "key": "Accept",
+            "value": "application/json;charset=utf-8"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"my-ai-model-name\",\n  \"description\": \"Deploy from existing AiModelSpecification\",\n  \"state\": \"reserved\",\n  \"aiModelSpecification\": {\n    \"id\": \"PUT_AI_MODEL_SPECIFICATION_ID_HERE\"\n  },\n  \"software\": [\n    {\n      \"id\": \"mlflow-runtime\",\n      \"name\": \"MLflow\",\n      \"softwareVersion\": \"2.11.1\"\n    }\n  ],\n  \"serviceCharacteristic\": [\n    {\n      \"name\": \"platform\",\n      \"valueType\": \"string\",\n      \"value\": \"mlflow\"\n    },\n    {\n      \"name\": \"dockerHost\",\n      \"valueType\": \"string\",\n      \"value\": \"{{dockerHost}}\"\n    },\n    {\n      \"name\": \"mlflowModelName\",\n      \"valueType\": \"string\",\n      \"value\": \"OPTIONAL_FALLBACK_IF_SPEC_HAS_NO_MODEL_ID\"\n    },\n    {\n      \"name\": \"mlflowModelVersion\",\n      \"valueType\": \"string\",\n      \"value\": \"OPTIONAL_FALLBACK_IF_SPEC_HAS_NO_MODEL_ID\"\n    }\n  ]\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/aiModel",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "aiModel"
+          ]
+        },
+        "description": "Creates an AiModel in RESERVED state and triggers deployment. Fill aiModelSpecification.id. The backend derives mlflowModelId from the referenced specification when available; mlflowModelName/mlflowModelVersion are only fallback fields."
+      },
+      "response": []
+    },
+    {
+      "name": "4. Get Deployed AI Model",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Get AI model status is 200', function () {",
+              "  pm.response.to.have.status(200);",
+              "});",
+              "",
+              "pm.test('Model is active and exposes endpoint', function () {",
+              "  var responseJson = pm.response.json();",
+              "  pm.expect(responseJson.state).to.equal('active');",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json;charset=utf-8"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/aiModel/{{deployedAiModelId}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "aiModel",
+            "{{deployedAiModelId}}"
+          ]
+        },
+        "description": "Fetches the deployed AI model by ID to see its active status, deployed endpoint, and the inference configuration generated by the system."
+      },
+      "response": []
+    }
+  ]
+}

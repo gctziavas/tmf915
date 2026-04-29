@@ -7,9 +7,9 @@ import org.etsi.osl.controllers.tmf915.model.AiModelSpecificationUpdate;
 import org.etsi.osl.controllers.tmf915.repo.AiModelSpecificationRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
@@ -24,11 +24,13 @@ public class AiModelSpecificationRepositoryService {
         this.aiModelSpecificationRepository = aiModelSpecificationRepository;
     }
 
-    public List<AiModelSpecification> findAllAiModelSpecifications() {
-        log.info("AiModelSpecifications LIST");
-        List<AiModelSpecification> result = new ArrayList<>();
-        aiModelSpecificationRepository.findAll().forEach(result::add);
-        return result;
+    private static final int DEFAULT_LIMIT = 50;
+
+    public List<AiModelSpecification> findAllAiModelSpecifications(Integer offset, Integer limit) {
+        log.info("AiModelSpecifications LIST (offset={}, limit={})", offset, limit);
+        int page = (offset != null && offset >= 0) ? offset : 0;
+        int size = (limit != null && limit > 0) ? limit : DEFAULT_LIMIT;
+        return aiModelSpecificationRepository.findAll(PageRequest.of(page / size, size)).getContent();
     }
 
     public AiModelSpecification findAiModelSpecificationById(String id) {

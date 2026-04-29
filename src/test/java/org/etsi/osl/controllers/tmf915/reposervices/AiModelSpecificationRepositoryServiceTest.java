@@ -9,6 +9,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
 
 import java.util.List;
 import java.util.Optional;
@@ -33,12 +35,13 @@ class AiModelSpecificationRepositoryServiceTest {
         AiModelSpecification s2 = new AiModelSpecification();
         s2.setId("2");
 
-        when(aiModelSpecificationRepository.findAll()).thenReturn(List.of(s1, s2));
+        when(aiModelSpecificationRepository.findAll(any(PageRequest.class)))
+                .thenReturn(new PageImpl<>(List.of(s1, s2)));
 
-        List<AiModelSpecification> result = service.findAllAiModelSpecifications();
+        List<AiModelSpecification> result = service.findAllAiModelSpecifications(null, null);
 
         assertEquals(2, result.size());
-        verify(aiModelSpecificationRepository).findAll();
+        verify(aiModelSpecificationRepository).findAll(any(PageRequest.class));
     }
 
     @Test

@@ -37,13 +37,15 @@ public class MlflowDeployer implements PlatformDeployer {
 
     @Override
     public void deploy(AiModel model) throws IOException {
+        String dockerHost = sanitizeDockerHost(getCharacteristicValue(model, "dockerHost"));
+
         // Try new Logged Models path first (mlflowModelId characteristic)
         String modelId = getCharacteristicValue(model, "mlflowModelId");
         if (modelId != null) {
             String runId = getCharacteristicValue(model, "mlflowRunId");
-            log.info("Deploying AiModel {} via MLflow logged model (modelId={}, runId={})",
-                    model.getId(), modelId, runId);
-            mlflowModelService.buildAndDeployFromLoggedModel(model, modelId, null, null);
+            log.info("Deploying AiModel {} via MLflow logged model (modelId={}, runId={}, dockerHost={})",
+                    model.getId(), modelId, runId, dockerHost);
+            mlflowModelService.buildAndDeployFromLoggedModel(model, modelId, null, dockerHost);
             log.info("AiModel {} deployed successfully", model.getId());
             return;
         }
@@ -55,8 +57,8 @@ public class MlflowDeployer implements PlatformDeployer {
             throw new IOException("AiModel " + model.getId()
                     + " is missing mlflowModelId or mlflowModelName/mlflowModelVersion characteristics");
         }
-        log.info("Deploying AiModel {} via MLflow (model={}, version={})", model.getId(), name, version);
-        mlflowModelService.buildAndDeployFromModel(model, name, version, null, null);
+        log.info("Deploying AiModel {} via MLflow (model={}, version={}, dockerHost={})", model.getId(), name, version, dockerHost);
+        mlflowModelService.buildAndDeployFromModel(model, name, version, null, dockerHost);
         log.info("AiModel {} deployed successfully", model.getId());
     }
 
@@ -64,7 +66,7 @@ public class MlflowDeployer implements PlatformDeployer {
     public void undeploy(AiModel model) {
         String containerId = getCharacteristicValue(model, "containerId");
         String imageName = getCharacteristicValue(model, "imageName");
-        String dockerHost = getCharacteristicValue(model, "dockerHost");
+        String dockerHost = sanitizeDockerHost(getCharacteristicValue(model, "dockerHost"));
         String targetHost = dockerHost != null ? dockerHost : deploymentService.getDockerHost();
 
         log.info("Undeploying AiModel {} via MLflow (container={}, image={}, host={})",
@@ -89,5 +91,18 @@ public class MlflowDeployer implements PlatformDeployer {
             }
         }
         return null;
+    }
+
+    /**
+     * Sanitizes the dockerHost URI to prevent injection or malformed connections.
+     * Keeps common URI parts (alphanumeric, dots, dashes, colons, slashes, @) and removes potentially dangerous shell characters.
+     */
+    private String sanitizeDockerHost(String dockerHost) {
+        if (dockerHost == null || dockerHost.trim().isEmpty()) {
+            return null;
+        }
+        // Remove shell-sensitive characters or whitespace that shouldn't be in a DOCKER_HOST URI.
+        // Valid Docker Hosts are generally: tcp://1.2.3.4:2375, unix:///var/run/docker.sock, ssh://user@host
+        return dockerHost.trim().replaceAll("[^a-zA-Z0-9://\\.\\-@_]", "");
     }
 }

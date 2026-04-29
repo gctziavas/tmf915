@@ -384,6 +384,9 @@ public class MlflowModelService {
         addCharacteristicToModel(aiModel, "containerId", deploy.getContainerId(), "string");
         addCharacteristicToModel(aiModel, "hostPort", String.valueOf(deploy.getHostPort()), "integer");
         addCharacteristicToModel(aiModel, "imageName", deploy.getImageName(), "string");
+        
+        String examplePayload = "{\n  \"dataframe_split\": {\n    \"columns\": [\"feature1\"],\n    \"data\": [[1.0]]\n  }\n}";
+        addCharacteristicToModel(aiModel, "inferencePayloadExample", examplePayload, "object");
 
         aiModel.setState(ServiceStateType.ACTIVE);
         aiModelRepository.updateAiModelState(aiModel.getId(), ServiceStateType.ACTIVE);

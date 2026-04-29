@@ -1,5 +1,6 @@
 .github
 .idea
+.ds_store
 target/
 *.iml
 *.log

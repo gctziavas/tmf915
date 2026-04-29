@@ -80,13 +80,13 @@ class MlflowSyncServiceIntegrationTest {
         }
 
         // Track existing specs to know which are new
-        List<AiModelSpecification> before = specRepo.findAllAiModelSpecifications();
+        List<AiModelSpecification> before = specRepo.findAllAiModelSpecifications(null, null);
 
         // Run sync
         syncService.syncModels();
 
         // Verify new specs were created
-        List<AiModelSpecification> after = specRepo.findAllAiModelSpecifications();
+        List<AiModelSpecification> after = specRepo.findAllAiModelSpecifications(null, null);
         assertTrue(after.size() > before.size(),
                 "Expected new specs after sync, before=" + before.size() + " after=" + after.size());
 
@@ -112,10 +112,10 @@ class MlflowSyncServiceIntegrationTest {
     void syncModels_isIdempotent() {
         // Run sync twice
         syncService.syncModels();
-        List<AiModelSpecification> afterFirst = specRepo.findAllAiModelSpecifications();
+        List<AiModelSpecification> afterFirst = specRepo.findAllAiModelSpecifications(null, null);
 
         syncService.syncModels();
-        List<AiModelSpecification> afterSecond = specRepo.findAllAiModelSpecifications();
+        List<AiModelSpecification> afterSecond = specRepo.findAllAiModelSpecifications(null, null);
 
         assertEquals(afterFirst.size(), afterSecond.size(),
                 "Running sync twice should not create duplicates");

@@ -2,7 +2,11 @@ package org.etsi.osl.controllers.tmf915.deployment;
 
 import org.etsi.osl.controllers.tmf915.model.AiModel;
 import org.etsi.osl.controllers.tmf915.model.AiModelCreate;
+import org.etsi.osl.controllers.tmf915.model.AiModelSpecification;
 import org.etsi.osl.controllers.tmf915.model.AiModelUpdate;
+import org.etsi.osl.controllers.tmf915.model.Characteristic;
+import org.etsi.osl.controllers.tmf915.model.CharacteristicSpecification;
+import org.etsi.osl.controllers.tmf915.model.CharacteristicValueSpecification;
 import org.etsi.osl.controllers.tmf915.model.ServiceStateType;
 import org.etsi.osl.controllers.tmf915.reposervices.AiModelRepositoryService;
 import org.slf4j.Logger;
@@ -13,7 +17,9 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.OffsetDateTime;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -81,6 +87,7 @@ public class AiModelLifecycleService {
 
         if (requestedState == ServiceStateType.RESERVED) {
             applyDefaultDates(aiModelCreate);
+            enrichCharacteristicsFromSpecification(aiModelCreate);
         }
 
         AiModel created = repoService.createAiModel(aiModelCreate);
@@ -116,6 +123,7 @@ public class AiModelLifecycleService {
 
     private AiModel handleDeploy(String id, AiModelUpdate aiModelUpdate) {
         applyDefaultDates(aiModelUpdate);
+        enrichCharacteristicsFromSpecification(id, aiModelUpdate);
         AiModel aiModel = repoService.updateAiModel(id, aiModelUpdate);
         log.info("AiModel {} set to RESERVED – scheduling deployment (startDate={}, endDate={})",
                 id, aiModel.getStartDate(), aiModel.getEndDate());
@@ -189,5 +197,174 @@ public class AiModelLifecycleService {
                 .filter(d -> d.supports(model))
                 .findFirst()
                 .orElse(null);
+    }
+
+    private void enrichCharacteristicsFromSpecification(AiModelCreate dto) {
+        AiModelSpecification specification = dto.getAiModelSpecification();
+        if (specification == null) {
+            return;
+        }
+
+        List<Characteristic> characteristics = dto.getServiceCharacteristic();
+        if (characteristics == null) {
+            characteristics = new ArrayList<>();
+            dto.setServiceCharacteristic(characteristics);
+        }
+
+        applySpecDerivedCharacteristics(characteristics, specification);
+    }
+
+    private void enrichCharacteristicsFromSpecification(String id, AiModelUpdate dto) {
+        AiModel existing = repoService.findAiModelById(id);
+        AiModelSpecification specification = dto.getAiModelSpecification() != null
+                ? dto.getAiModelSpecification()
+                : existing != null ? existing.getAiModelSpecification() : null;
+
+        if (specification == null) {
+            return;
+        }
+
+        List<Characteristic> characteristics = dto.getServiceCharacteristic();
+        if (characteristics == null) {
+            characteristics = existing != null && existing.getServiceCharacteristic() != null
+                    ? new ArrayList<>(existing.getServiceCharacteristic())
+                    : new ArrayList<>();
+            dto.setServiceCharacteristic(characteristics);
+        }
+
+        applySpecDerivedCharacteristics(characteristics, specification);
+    }
+
+    private void applySpecDerivedCharacteristics(List<Characteristic> characteristics,
+                                                 AiModelSpecification specification) {
+        String mlflowModelId = resolveMlflowModelIdFromSpecification(specification);
+        if (mlflowModelId != null && findCharacteristic(characteristics, "mlflowModelId") == null) {
+            characteristics.add(createCharacteristic("mlflowModelId", mlflowModelId, "string"));
+        }
+
+        String deploymentUri = resolveDeploymentUriFromSpecification(specification);
+        if (deploymentUri != null && findCharacteristic(characteristics, "deploymentUri") == null) {
+            characteristics.add(createCharacteristic("deploymentUri", deploymentUri, "string"));
+        }
+    }
+
+    private String resolveMlflowModelIdFromSpecification(AiModelSpecification specification) {
+        String fromSpecs = findSpecCharacteristicValue(specification,
+                "mlflowModelId", "loggedModelId", "modelId");
+        if (fromSpecs != null) {
+            return fromSpecs;
+        }
+
+        String version = specification.getVersion();
+        if (version != null && version.startsWith("m-")) {
+            return version;
+        }
+
+        Object deploymentRecord = specification.getDeploymentRecord();
+        if (deploymentRecord instanceof Map<?, ?> map) {
+            Object modelId = map.get("mlflowModelId");
+            if (modelId == null) {
+                modelId = map.get("modelId");
+            }
+            if (modelId != null) {
+                String value = modelId.toString().trim();
+                if (!value.isEmpty()) {
+                    return value;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private String resolveDeploymentUriFromSpecification(AiModelSpecification specification) {
+        String fromSpecs = findSpecCharacteristicValue(specification,
+                "deploymentUri", "deploymentUrl", "endpoint");
+        if (fromSpecs != null) {
+            return fromSpecs;
+        }
+
+        Object deploymentRecord = specification.getDeploymentRecord();
+        if (deploymentRecord instanceof String s) {
+            String value = s.trim();
+            return value.isEmpty() ? null : value;
+        }
+
+        if (deploymentRecord instanceof Map<?, ?> map) {
+            Object uri = map.get("deploymentUri");
+            if (uri == null) {
+                uri = map.get("deploymentUrl");
+            }
+            if (uri == null) {
+                uri = map.get("url");
+            }
+            if (uri == null) {
+                uri = map.get("endpoint");
+            }
+            if (uri != null) {
+                String value = uri.toString().trim();
+                if (!value.isEmpty()) {
+                    return value;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private String findSpecCharacteristicValue(AiModelSpecification specification, String... names) {
+        if (specification.getSpecCharacteristic() == null) {
+            return null;
+        }
+
+        for (CharacteristicSpecification characteristic : specification.getSpecCharacteristic()) {
+            if (characteristic == null || characteristic.getName() == null) {
+                continue;
+            }
+
+            for (String name : names) {
+                if (name.equalsIgnoreCase(characteristic.getName())) {
+                    String directValue = firstCharacteristicValue(characteristic);
+                    if (directValue != null) {
+                        return directValue;
+                    }
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private String firstCharacteristicValue(CharacteristicSpecification characteristicSpecification) {
+        if (characteristicSpecification.getCharacteristicValueSpecification() == null) {
+            return null;
+        }
+
+        for (CharacteristicValueSpecification valueSpec : characteristicSpecification.getCharacteristicValueSpecification()) {
+            if (valueSpec != null && valueSpec.getValue() != null) {
+                String value = valueSpec.getValue().toString().trim();
+                if (!value.isEmpty()) {
+                    return value;
+                }
+            }
+        }
+        return null;
+    }
+
+    private Characteristic findCharacteristic(List<Characteristic> characteristics, String name) {
+        for (Characteristic characteristic : characteristics) {
+            if (characteristic != null && name.equals(characteristic.getName())) {
+                return characteristic;
+            }
+        }
+        return null;
+    }
+
+    private Characteristic createCharacteristic(String name, String value, String valueType) {
+        Characteristic characteristic = new Characteristic();
+        characteristic.setName(name);
+        characteristic.setValue(value);
+        characteristic.setValueType(valueType);
+        return characteristic;
     }
 }
