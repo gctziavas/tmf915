@@ -233,7 +233,7 @@ public class MlflowDeploymentService {
             cmd.add("run");
             cmd.add("-d");
             cmd.add("-p");
-            cmd.add("127.0.0.1:" + port + ":" + containerPort);
+            cmd.add("0.0.0.0:" + port + ":" + containerPort);
             if (containerName != null && !containerName.isEmpty()) {
                 cmd.add("--name");
                 cmd.add(containerName);

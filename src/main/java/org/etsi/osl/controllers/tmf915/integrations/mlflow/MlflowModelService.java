@@ -127,11 +127,8 @@ public class MlflowModelService {
         // Image name remains tied to the underlying MLflow artifact ID to allow caching and skipping rebuilds
         String imageName = sanitizeImageName(modelId);
 
-        // Container name derives from the user-provided AiModel name to be human-readable in `docker ps`
-        String safeModelName = (aiModel.getName() != null && !aiModel.getName().isEmpty())
-                ? sanitizeImageName(aiModel.getName())
-                : "aimodel";
-        String containerName = safeModelName + "-" + aiModel.getId().substring(0, Math.min(8, aiModel.getId().length()));
+        // Container name derives from the user-provided AiModel name + version, or fallback
+        String containerName = generateContainerName(aiModel, null);
 
         return buildAndDeployFromUri(aiModel, artifactUri, imageName, containerName, port, dockerHost);
     }
@@ -300,9 +297,39 @@ public class MlflowModelService {
         ModelVersion mv = getModelVersion(modelName, resolvedVersion);
         String runId = mv.getRunId();
         String imageName = sanitizeImageName(modelName) + "-v" + resolvedVersion;
-        String containerName = sanitizeImageName(modelName) + "-v" + resolvedVersion;
+        String containerName = generateContainerName(aiModel, resolvedVersion);
 
         return buildAndDeploy(aiModel, runId, imageName, containerName, port, dockerHost);
+    }
+
+    /**
+     * Generates a container name using the AiModel's name and version if available,
+     * otherwise falls back to appending a partial ID to ensure uniqueness.
+     */
+    private String generateContainerName(AiModel aiModel, String fallbackVersion) {
+        String safeName = (aiModel.getName() != null && !aiModel.getName().trim().isEmpty())
+                ? sanitizeImageName(aiModel.getName())
+                : "aimodel";
+
+        String versionToUse = null;
+        if (aiModel.getAiModelSpecification() != null 
+                && aiModel.getAiModelSpecification().getVersion() != null 
+                && !aiModel.getAiModelSpecification().getVersion().trim().isEmpty()) {
+            versionToUse = aiModel.getAiModelSpecification().getVersion();
+        } else if (fallbackVersion != null && !fallbackVersion.trim().isEmpty()) {
+            versionToUse = fallbackVersion;
+        }
+
+        if (aiModel.getName() != null && !aiModel.getName().trim().isEmpty() && versionToUse != null) {
+            String cleanVersion = sanitizeImageName(versionToUse);
+            if (cleanVersion.startsWith("m-")) {
+                cleanVersion = cleanVersion.substring(2);
+            }
+            return safeName + "-v" + cleanVersion;
+        }
+
+        // Fallback to our technique
+        return safeName + "-" + aiModel.getId().substring(0, Math.min(8, aiModel.getId().length()));
     }
 
     /**

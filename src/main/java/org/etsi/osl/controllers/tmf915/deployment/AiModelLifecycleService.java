@@ -170,6 +170,16 @@ public class AiModelLifecycleService {
 
     public void deleteAiModel(String id) {
         log.info("Deleting AiModel {}", id);
+        
+        AiModel existing = repoService.findAiModelById(id);
+        if (existing != null) {
+            PlatformDeployer deployer = findDeployer(existing);
+            if (deployer != null) {
+                log.info("Undeploying platform resources for AiModel {}", id);
+                deployer.undeploy(existing);
+            }
+        }
+        
         scheduler.cancelScheduled(id);
         repoService.deleteAiModel(id);
     }

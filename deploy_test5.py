@@ -8,12 +8,13 @@ headers = {'Authorization': f'Bearer {token}', 'Content-Type': 'application/json
 aimodel_url = 'http://localhost:13082/tmf-api/tmf-api/AiM/v4/aiModel'
 
 payload = {
-    "name": "test-deployment-docker",
+    "name": "test-model-named",
     "state": "reserved",
     "software": [{"id": "dummy-software"}],
     "aiModelSpecification": {
         "id": "0414e842-790d-4b2d-89c0-3b1d4e996288",
-        "name": "champion-pipeline-iris"
+        "name": "champion-pipeline-iris",
+        "version": "1.0.0"
     },
     "serviceCharacteristic": [
         {
