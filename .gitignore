@@ -6,3 +6,4 @@ target/
 *.log
 *.tmp
 */target/
+test_summary.txt
