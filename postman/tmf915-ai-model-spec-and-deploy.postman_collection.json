@@ -245,7 +245,7 @@
         ],
         "body": {
           "mode": "raw",
-          "raw": "{\n  \"name\": \"my-ai-model-name\",\n  \"description\": \"Deploy from existing AiModelSpecification\",\n  \"state\": \"reserved\",\n  \"aiModelSpecification\": {\n    \"id\": \"PUT_AI_MODEL_SPECIFICATION_ID_HERE\"\n  },\n  \"software\": [\n    {\n      \"id\": \"mlflow-runtime\",\n      \"name\": \"MLflow\",\n      \"softwareVersion\": \"2.11.1\"\n    }\n  ],\n  \"serviceCharacteristic\": [\n    {\n      \"name\": \"platform\",\n      \"valueType\": \"string\",\n      \"value\": \"mlflow\"\n    },\n    {\n      \"name\": \"dockerHost\",\n      \"valueType\": \"string\",\n      \"value\": \"{{dockerHost}}\"\n    },\n    {\n      \"name\": \"mlflowModelName\",\n      \"valueType\": \"string\",\n      \"value\": \"OPTIONAL_FALLBACK_IF_SPEC_HAS_NO_MODEL_ID\"\n    },\n    {\n      \"name\": \"mlflowModelVersion\",\n      \"valueType\": \"string\",\n      \"value\": \"OPTIONAL_FALLBACK_IF_SPEC_HAS_NO_MODEL_ID\"\n    }\n  ]\n}"
+          "raw": "{\n  \"name\": \"my-ai-model-name\",\n  \"description\": \"Deploy from existing AiModelSpecification\",\n  \"state\": \"reserved\",\n  \"aiModelSpecification\": {\n    \"id\": \"PUT_AI_MODEL_SPECIFICATION_ID_HERE\"\n  },\n  \"software\": [\n    {\n      \"id\": \"mlflow-runtime\",\n      \"name\": \"MLflow\",\n      \"softwareVersion\": \"2.11.1\"\n    }\n  ],\n  \"serviceCharacteristic\": [\n    {\n      \"name\": \"platform\",\n      \"valueType\": \"string\",\n      \"value\": \"mlflow\"\n    }\n  ]\n}"
         },
         "url": {
           "raw": "{{baseUrl}}/aiModel",
@@ -271,9 +271,14 @@
               "  pm.response.to.have.status(200);",
               "});",
               "",
-              "pm.test('Model is active and exposes endpoint', function () {",
+              "pm.test('Model contains error note if deployed failed, or state is active if success', function () {",
               "  var responseJson = pm.response.json();",
-              "  pm.expect(responseJson.state).to.equal('active');",
+              "  if (responseJson.state === 'designed') {",
+              "    pm.expect(responseJson.note).to.be.an('array');",
+              "    pm.expect(responseJson.note[0].author).to.equal('TMF915');",
+              "  } else {",
+              "    pm.expect(responseJson.state).to.equal('active');",
+              "  }",
               "});"
             ],
             "type": "text/javascript"

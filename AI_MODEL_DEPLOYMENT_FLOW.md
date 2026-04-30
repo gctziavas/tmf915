@@ -44,8 +44,8 @@ sequenceDiagram
   
     %% 5. Finalizing
     Note over Deployer, Lifecycle: 5. Finalizing State
-    Deployer->>Lifecycle: updateAiModelState(ACTIVE)
-    Lifecycle->>Lifecycle: Set containerId, imageName, endpoint
+    Deployer->>Lifecycle: updateAiModelState(ACTIVE / DESIGNED)
+    Lifecycle->>Lifecycle: Update AI Model and Spec (model_file_exists)
 ```
 
 ## Step-by-Step Details
@@ -133,6 +133,9 @@ Content-Type: application/json;charset=utf-8
 
 ### 5. Finalizing State
 
-* **Trigger:** Docker run completes successfully.
-* **Action:** `MlflowModelService` invokes `updateModelAfterDeploy()`.
-* **Outcome:** The `AiModel` entity is updated to the **`ACTIVE`** state. Characteristics such as `containerId`, `imageName`, `endpoint`, and an `inferencePayloadExample` are attached to the model so consumers can start interacting with the model immediately.
+* **Success Path:**
+  * **Trigger:** Docker run completes successfully.
+  * **Outcome:** The `AiModel` entity is updated to the **`ACTIVE`** state. Characteristics such as `containerId`, `imageName` (formatted without `m-`), and `endpoint` (exposed via `0.0.0.0`) are attached to the model. A boolean characteristic `model_file_exists` is successfully validated on the parent `AiModelSpecification`.
+* **Failure Path:**
+  * **Trigger:** Model artifacts cannot be found during `buildImageFromUri` or a network timeout occurs.
+  * **Outcome:** The `AiModel` entity gracefully rolls back to **`DESIGNED`**. A descriptive `Note` is instantiated tracking the exact Python error trace, attributed to `TMF915`. Finally, the `model_file_exists` characteristic on the `AiModelSpecification` is marked as `false`.

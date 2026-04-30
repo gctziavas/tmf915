@@ -421,6 +421,7 @@ mlflow:
 | `metric_*`        | Evaluation metrics (accuracy, loss, f1, etc.)   |
 | `param_*`         | Training hyperparameters                        |
 | `tags`            | Combined model + version tags                   |
+| `model_file_exists`| Boolean indicating if model file was found during deployment (`true`/`false`) |
 
 **AiModel** (via `MlflowModelService`):
 
@@ -432,12 +433,21 @@ mlflow:
 | `mlflowModelName`    | Registered model name          |
 | `mlflowModelVersion` | Version number                 |
 | `mlflowRunId`        | Training run ID                |
-| `endpoint`           | Inference URL (`/invocations`) |
+| `endpoint`           | Inference URL (`/invocations`) accessible via `0.0.0.0` |
 | `containerId`        | Docker container ID            |
 | `hostPort`           | Mapped host port               |
 | `dockerHost`         | Docker daemon URI              |
-| `imageName`          | Docker image name              |
+| `imageName`          | Docker image name (formatted dynamically without `m-` prefix) |
 | `deployedAt`         | ISO-8601 deployment timestamp  |
+
+---
+
+## Deployment & Lifecycle Notes
+
+When a deployment operation fails (e.g., MinIO model files are missing or a timeout occurs), the `DeploymentScheduler` handles the failure gracefully:
+1. Reverts the `AiModel` state back to `designed`.
+2. Appends a detailed `Note` (attributed to author `TMF915`) containing the exact failure traceback (e.g., "Image build failed, model files not found") directly onto the `AiModel`.
+3. Updates the `model_file_exists` characteristic on the corresponding `AiModelSpecification` to `false` (set to `true` on success).
 
 ---
 
