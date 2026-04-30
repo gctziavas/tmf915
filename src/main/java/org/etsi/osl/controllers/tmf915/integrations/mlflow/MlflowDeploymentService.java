@@ -233,7 +233,7 @@ public class MlflowDeploymentService {
             cmd.add("run");
             cmd.add("-d");
             cmd.add("-p");
-            cmd.add(port + ":" + containerPort);
+            cmd.add("127.0.0.1:" + port + ":" + containerPort);
             if (containerName != null && !containerName.isEmpty()) {
                 cmd.add("--name");
                 cmd.add(containerName);
@@ -250,10 +250,24 @@ public class MlflowDeploymentService {
                 if (!finished) {
                     process.destroyForcibly();
                     lastError = "Docker command timed out on port " + port;
+                    if (containerName != null && !containerName.isEmpty()) {
+                        try {
+                            ProcessBuilder rmPb = new ProcessBuilder("docker", "rm", "-f", containerName);
+                            applyDockerHost(rmPb.environment(), targetHost);
+                            rmPb.start().waitFor(10, TimeUnit.SECONDS);
+                        } catch (Exception ignored) {}
+                    }
                     continue;
                 }
                 if (process.exitValue() != 0) {
                     lastError = new String(process.getErrorStream().readAllBytes()).trim();
+                    if (containerName != null && !containerName.isEmpty()) {
+                        try {
+                            ProcessBuilder rmPb = new ProcessBuilder("docker", "rm", "-f", containerName);
+                            applyDockerHost(rmPb.environment(), targetHost);
+                            rmPb.start().waitFor(10, TimeUnit.SECONDS);
+                        } catch (Exception ignored) {}
+                    }
                     continue;
                 }
 

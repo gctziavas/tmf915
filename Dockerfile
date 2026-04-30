@@ -12,7 +12,7 @@ WORKDIR /app
 
 # Install Python + pip for mlflow CLI (needed for build-docker)
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends python3 python3-pip python3-venv && \
+    apt-get install -y --no-install-recommends python3 python3-pip python3-venv docker.io && \
     python3 -m venv /opt/mlflow-venv && \
     /opt/mlflow-venv/bin/pip install --no-cache-dir mlflow boto3 && \
     apt-get clean && rm -rf /var/lib/apt/lists/*

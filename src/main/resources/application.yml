@@ -154,7 +154,7 @@ spring-addons:
 
 mlflow:
   tracking-uri: "http://172.16.100.94:5000"
-  s3-endpoint-url: "http://172.16.100.94:9000"
+  s3-endpoint-url: "http://172.16.100.94:9010"
   s3-access-key: "minioadmin"
   s3-secret-key: "minioadmin"
   docker:

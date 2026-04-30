@@ -9,6 +9,7 @@ import org.etsi.osl.controllers.tmf915.model.CharacteristicSpecification;
 import org.etsi.osl.controllers.tmf915.model.CharacteristicValueSpecification;
 import org.etsi.osl.controllers.tmf915.model.ServiceStateType;
 import org.etsi.osl.controllers.tmf915.reposervices.AiModelRepositoryService;
+import org.etsi.osl.controllers.tmf915.reposervices.AiModelSpecificationRepositoryService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -56,18 +57,21 @@ public class AiModelLifecycleService {
     );
 
     private final AiModelRepositoryService repoService;
+    private final AiModelSpecificationRepositoryService specificationRepositoryService;
     private final DeploymentScheduler scheduler;
     private final List<PlatformDeployer> deployers;
     private final TransactionTemplate txTemplate;
 
     public AiModelLifecycleService(AiModelRepositoryService repoService,
+                                   AiModelSpecificationRepositoryService specificationRepositoryService,
                                    DeploymentScheduler scheduler,
                                    List<PlatformDeployer> deployers,
-                                   PlatformTransactionManager txManager) {
+                                   PlatformTransactionManager transactionManager) {
         this.repoService = repoService;
+        this.specificationRepositoryService = specificationRepositoryService;
         this.scheduler = scheduler;
         this.deployers = deployers;
-        this.txTemplate = new TransactionTemplate(txManager);
+        this.txTemplate = new TransactionTemplate(transactionManager);
     }
 
     /**
@@ -200,7 +204,7 @@ public class AiModelLifecycleService {
     }
 
     private void enrichCharacteristicsFromSpecification(AiModelCreate dto) {
-        AiModelSpecification specification = dto.getAiModelSpecification();
+        AiModelSpecification specification = resolveSpecification(dto.getAiModelSpecification());
         if (specification == null) {
             return;
         }
@@ -212,13 +216,30 @@ public class AiModelLifecycleService {
         }
 
         applySpecDerivedCharacteristics(characteristics, specification);
+
+        // If platform is mlflow, inject a software ref with id mlflow if missing
+        Characteristic platformChar = findCharacteristic(characteristics, "platform");
+        if (platformChar != null && "mlflow".equalsIgnoreCase(platformChar.getValue() != null ? platformChar.getValue().toString() : "")) {
+            if (dto.getSoftware() == null) {
+                dto.setSoftware(new ArrayList<>());
+            }
+            if (dto.getSoftware().isEmpty() || dto.getSoftware().stream().allMatch(s -> s.getId() == null || s.getId().isEmpty())) {
+                if (dto.getSoftware().isEmpty()) {
+                    dto.addSoftwareItem(new org.etsi.osl.controllers.tmf915.model.SoftwareRef("mlflow"));
+                } else {
+                    dto.getSoftware().get(0).setId("mlflow");
+                }
+            }
+        }
     }
 
     private void enrichCharacteristicsFromSpecification(String id, AiModelUpdate dto) {
         AiModel existing = repoService.findAiModelById(id);
-        AiModelSpecification specification = dto.getAiModelSpecification() != null
-                ? dto.getAiModelSpecification()
-                : existing != null ? existing.getAiModelSpecification() : null;
+        AiModelSpecification specification = resolveSpecification(
+                dto.getAiModelSpecification() != null
+                        ? dto.getAiModelSpecification()
+                        : existing != null ? existing.getAiModelSpecification() : null
+        );
 
         if (specification == null) {
             return;
@@ -233,6 +254,35 @@ public class AiModelLifecycleService {
         }
 
         applySpecDerivedCharacteristics(characteristics, specification);
+
+        // If platform is mlflow, inject a software ref with id mlflow if missing
+        Characteristic platformChar = findCharacteristic(characteristics, "platform");
+        if (platformChar != null && "mlflow".equalsIgnoreCase(platformChar.getValue() != null ? platformChar.getValue().toString() : "")) {
+            if (dto.getSoftware() == null) {
+                dto.setSoftware(new ArrayList<>());
+            }
+            if (dto.getSoftware().isEmpty() || dto.getSoftware().stream().allMatch(s -> s.getId() == null || s.getId().isEmpty())) {
+                if (dto.getSoftware().isEmpty()) {
+                    dto.addSoftwareItem(new org.etsi.osl.controllers.tmf915.model.SoftwareRef("mlflow"));
+                } else {
+                    dto.getSoftware().get(0).setId("mlflow");
+                }
+            }
+        }
+    }
+
+    private AiModelSpecification resolveSpecification(AiModelSpecification reference) {
+        if (reference == null) {
+            return null;
+        }
+
+        String specId = reference.getId();
+        if (specId == null || specId.isBlank()) {
+            return reference;
+        }
+
+        AiModelSpecification hydrated = specificationRepositoryService.findAiModelSpecificationById(specId);
+        return hydrated != null ? hydrated : reference;
     }
 
     private void applySpecDerivedCharacteristics(List<Characteristic> characteristics,

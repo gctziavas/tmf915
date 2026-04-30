@@ -3,9 +3,11 @@ package org.etsi.osl.controllers.tmf915.mappers;
 import org.etsi.osl.controllers.tmf915.model.AiModel;
 import org.etsi.osl.controllers.tmf915.model.AiModelCreate;
 import org.etsi.osl.controllers.tmf915.model.AiModelUpdate;
+import org.etsi.osl.controllers.tmf915.model.Characteristic;
 import org.etsi.osl.controllers.tmf915.model.ServiceStateType;
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
 import java.time.OffsetDateTime;
 import java.util.List;
 
@@ -107,5 +109,48 @@ class AiModelMapperTest {
         AiModelMapper.applyUpdate(target, src);
 
         assertEquals(ServiceStateType.INACTIVE, target.getState());
+    }
+
+    @Test
+    void applyUpdate_serviceCharacteristics_mergeByName_withoutReplacingCollection() {
+        AiModel target = new AiModel();
+
+        Characteristic platform = new Characteristic();
+        platform.setName("platform");
+        platform.setValue("mlflow");
+
+        Characteristic dockerHost = new Characteristic();
+        dockerHost.setName("dockerHost");
+        dockerHost.setValue("tcp://broken:2375");
+
+        List<Characteristic> existing = new ArrayList<>();
+        existing.add(platform);
+        existing.add(dockerHost);
+        target.setServiceCharacteristic(existing);
+
+        Characteristic dockerHostUpdate = new Characteristic();
+        dockerHostUpdate.setName("dockerHost");
+        dockerHostUpdate.setValue("unix:///var/run/docker.sock");
+
+        Characteristic modelId = new Characteristic();
+        modelId.setName("mlflowModelId");
+        modelId.setValue("m-123");
+
+        AiModelUpdate src = new AiModelUpdate();
+        src.setServiceCharacteristic(List.of(dockerHostUpdate, modelId));
+
+        AiModelMapper.applyUpdate(target, src);
+
+        assertSame(existing, target.getServiceCharacteristic());
+        assertEquals(3, target.getServiceCharacteristic().size());
+        assertEquals("unix:///var/run/docker.sock", findByName(target.getServiceCharacteristic(), "dockerHost").getValue());
+        assertEquals("m-123", findByName(target.getServiceCharacteristic(), "mlflowModelId").getValue());
+    }
+
+    private Characteristic findByName(List<Characteristic> list, String name) {
+        return list.stream()
+                .filter(c -> name.equals(c.getName()))
+                .findFirst()
+                .orElseThrow();
     }
 }

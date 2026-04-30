@@ -124,8 +124,14 @@ public class MlflowModelService {
             throw new IOException("Logged model " + modelId + " has no artifact URI");
         }
 
+        // Image name remains tied to the underlying MLflow artifact ID to allow caching and skipping rebuilds
         String imageName = sanitizeImageName(modelId);
-        String containerName = imageName;
+
+        // Container name derives from the user-provided AiModel name to be human-readable in `docker ps`
+        String safeModelName = (aiModel.getName() != null && !aiModel.getName().isEmpty())
+                ? sanitizeImageName(aiModel.getName())
+                : "aimodel";
+        String containerName = safeModelName + "-" + aiModel.getId().substring(0, Math.min(8, aiModel.getId().length()));
 
         return buildAndDeployFromUri(aiModel, artifactUri, imageName, containerName, port, dockerHost);
     }
