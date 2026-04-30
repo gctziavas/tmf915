@@ -53,13 +53,16 @@ public class DeploymentScheduler {
 
     private final List<PlatformDeployer> deployers;
     private final AiModelRepositoryService repoService;
+    private final org.etsi.osl.controllers.tmf915.reposervices.AiModelSpecificationRepositoryService specRepoService;
     private final TransactionTemplate txTemplate;
 
     public DeploymentScheduler(List<PlatformDeployer> deployers,
                                AiModelRepositoryService repoService,
+                               org.etsi.osl.controllers.tmf915.reposervices.AiModelSpecificationRepositoryService specRepoService,
                                PlatformTransactionManager txManager) {
         this.deployers = deployers;
         this.repoService = repoService;
+        this.specRepoService = specRepoService;
         this.txTemplate = new TransactionTemplate(txManager);
     }
 
@@ -189,10 +192,35 @@ public class DeploymentScheduler {
 
             try {
                 deployer.deploy(aiModel);
+                updateModelFileExistsCharacteristic(aiModel, true);
                 return repoService.findAiModelById(aiModelId);
-            } catch (IOException e) {
+            } catch (Exception e) {
                 log.error("Scheduled deployment failed for AiModel {}: {}", aiModelId, e.getMessage());
-                repoService.updateAiModelState(aiModelId, ServiceStateType.DESIGNED);
+                
+                updateModelFileExistsCharacteristic(aiModel, false);
+                
+                org.etsi.osl.controllers.tmf915.model.AiModelUpdate update = new org.etsi.osl.controllers.tmf915.model.AiModelUpdate();
+                update.setState(ServiceStateType.DESIGNED);
+                
+                // Keep existing notes if any
+                if (aiModel.getNote() != null) {
+                    update.setNote(new java.util.ArrayList<>(aiModel.getNote()));
+                }
+                
+                org.etsi.osl.controllers.tmf915.model.Note errorNote = new org.etsi.osl.controllers.tmf915.model.Note();
+                
+                String errorMessage = e.getMessage();
+                if (errorMessage != null && (errorMessage.contains("Not Found") || errorMessage.contains("object not found"))) {
+                    errorNote.setText("Image build failed, model files not found");
+                } else {
+                    errorNote.setText("Deployment failed: " + errorMessage);
+                }
+                
+                errorNote.setDate(OffsetDateTime.now());
+                errorNote.setAuthor("TMF915_DeploymentScheduler");
+                update.addNoteItem(errorNote);
+                
+                repoService.updateAiModel(aiModelId, update);
                 return aiModel;
             }
         });
@@ -253,6 +281,74 @@ public class DeploymentScheduler {
         ScheduledFuture<?> existing = map.remove(id);
         if (existing != null && !existing.isDone()) {
             existing.cancel(false);
+        }
+    }
+
+    private void updateModelFileExistsCharacteristic(AiModel aiModel, boolean exists) {
+        if (aiModel.getAiModelSpecification() != null && aiModel.getAiModelSpecification().getId() != null) {
+            String specId = aiModel.getAiModelSpecification().getId();
+            org.etsi.osl.controllers.tmf915.model.AiModelSpecification spec = specRepoService.findAiModelSpecificationById(specId);
+            
+            if (spec != null) {
+                org.etsi.osl.controllers.tmf915.model.AiModelSpecificationUpdate specUpdate = new org.etsi.osl.controllers.tmf915.model.AiModelSpecificationUpdate();
+                
+                boolean characteristicFound = false;
+                List<org.etsi.osl.controllers.tmf915.model.CharacteristicSpecification> chars = spec.getSpecCharacteristic();
+                
+                if (chars != null) {
+                    for (org.etsi.osl.controllers.tmf915.model.CharacteristicSpecification cs : chars) {
+                        if ("model_file_exists".equals(cs.getName())) {
+                            characteristicFound = true;
+                            break;
+                        }
+                    }
+                }
+                
+                // Note: According to OpenAPI TMF specs, typically characteristics in update REPLACE or merge.
+                // It depends on the application's mapper. Assuming we must provide the characteristic to add it:
+                if (!characteristicFound) {
+                    org.etsi.osl.controllers.tmf915.model.CharacteristicSpecification newChar = new org.etsi.osl.controllers.tmf915.model.CharacteristicSpecification();
+                    newChar.setName("model_file_exists");
+                    newChar.setValueType("boolean");
+                    
+                    org.etsi.osl.controllers.tmf915.model.CharacteristicValueSpecification valSpec = new org.etsi.osl.controllers.tmf915.model.CharacteristicValueSpecification();
+                    valSpec.setValue(exists);
+                    newChar.addCharacteristicValueSpecificationItem(valSpec);
+                    
+                    if (chars != null) {
+                        // copy existing to update
+                        List<org.etsi.osl.controllers.tmf915.model.CharacteristicSpecification> updatedChars = new java.util.ArrayList<>(chars);
+                        updatedChars.add(newChar);
+                        specUpdate.setSpecCharacteristic(updatedChars);
+                    } else {
+                        specUpdate.addSpecCharacteristicItem(newChar);
+                    }
+                } else {
+                    // Update existing
+                    List<org.etsi.osl.controllers.tmf915.model.CharacteristicSpecification> updatedChars = new java.util.ArrayList<>();
+                    for (org.etsi.osl.controllers.tmf915.model.CharacteristicSpecification cs : chars) {
+                        if ("model_file_exists".equals(cs.getName())) {
+                            // Find and update value or add new one
+                            List<org.etsi.osl.controllers.tmf915.model.CharacteristicValueSpecification> vals = cs.getCharacteristicValueSpecification();
+                            if (vals != null && !vals.isEmpty()) {
+                                vals.get(0).setValue(exists);
+                            } else {
+                                org.etsi.osl.controllers.tmf915.model.CharacteristicValueSpecification valSpec = new org.etsi.osl.controllers.tmf915.model.CharacteristicValueSpecification();
+                                valSpec.setValue(exists);
+                                cs.addCharacteristicValueSpecificationItem(valSpec);
+                            }
+                        }
+                        updatedChars.add(cs);
+                    }
+                    specUpdate.setSpecCharacteristic(updatedChars);
+                }
+                
+                try {
+                    specRepoService.updateAiModelSpecification(specId, specUpdate);
+                } catch (Exception e) {
+                    log.warn("Failed to update model_file_exists characteristic on AiModelSpecification {}: {}", specId, e.getMessage());
+                }
+            }
         }
     }
 }
