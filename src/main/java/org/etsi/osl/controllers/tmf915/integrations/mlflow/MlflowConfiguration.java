@@ -7,6 +7,9 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
+import org.springframework.web.client.RestTemplate;
+import org.springframework.web.util.DefaultUriBuilderFactory;
 
 @Configuration
 @ConditionalOnProperty(name = "mlflow.enabled", havingValue = "true")
@@ -27,6 +30,22 @@ public class MlflowConfiguration {
     public MlflowClient mlflowClient() {
         log.info("Initialising MlflowClient with tracking URI: {}", trackingUri);
         return new MlflowClient(trackingUri);
+    }
+
+    @Bean("mlflowRestTemplate")
+    public RestTemplate mlflowRestTemplate() {
+        String base = trackingUri.endsWith("/")
+                ? trackingUri.substring(0, trackingUri.length() - 1)
+                : trackingUri;
+        log.info("Initialising MLflow RestTemplate with base URI: {}", base);
+
+        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
+        factory.setConnectTimeout(connectionTimeout);
+        factory.setReadTimeout(readTimeout);
+
+        RestTemplate restTemplate = new RestTemplate(factory);
+        restTemplate.setUriTemplateHandler(new DefaultUriBuilderFactory(base));
+        return restTemplate;
     }
 
     public String getTrackingUri() {

@@ -41,7 +41,7 @@ public class AiModelSpecificationApiController implements AiModelSpecificationAp
     public ResponseEntity<List<AiModelSpecification>> listAiModelSpecification(@Nullable String fields,
                                                                                 @Nullable Integer offset,
                                                                                 @Nullable Integer limit) {
-        return ResponseEntity.ok(service.findAllAiModelSpecifications());
+        return ResponseEntity.ok(service.findAllAiModelSpecifications(offset, limit));
     }
 
     @Override

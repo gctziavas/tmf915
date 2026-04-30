@@ -91,6 +91,142 @@ public class MlflowSpecificationService {
     }
 
     /**
+     * Creates an AiModelSpecificationCreate from an MLflow Logged Model (new MLflow 2.x API).
+     *
+     * @param loggedModel The logged model from the MLflow API
+     * @param experimentName The experiment name (used as the specification name)
+     * @param baseUrl The base URL for the TMF API
+     * @return AiModelSpecificationCreate ready to be persisted
+     */
+    public AiModelSpecificationCreate createSpecificationFromLoggedModel(LoggedModel loggedModel,
+                                                                         String experimentName,
+                                                                         String baseUrl) {
+        LoggedModel.LoggedModelInfo info = loggedModel.getInfo();
+        log.info("Creating AiModelSpecification from logged model: {} (experiment: {})",
+                info.getModelId(), experimentName);
+
+        AiModelSpecificationCreate spec = new AiModelSpecificationCreate();
+        spec.setName(experimentName);
+        spec.setVersion(info.getModelId());
+
+        // Build description from params
+        String configVersion = getLoggedModelParam(loggedModel, "config.version");
+        String configModel = getLoggedModelParam(loggedModel, "config.model");
+        if (configVersion != null) {
+            spec.setDescription(configVersion);
+        } else if (configModel != null) {
+            spec.setDescription("MLflow logged model: " + configModel + " (" + info.getModelId() + ")");
+        } else {
+            spec.setDescription("MLflow logged model: " + info.getModelId());
+        }
+
+        // Add logged model characteristics
+        addLoggedModelCharacteristics(spec, info);
+        addLoggedModelParamCharacteristics(spec, loggedModel);
+        addLoggedModelMetricCharacteristics(spec, loggedModel);
+        addLoggedModelTagCharacteristics(spec, info);
+
+        // Artifact URLs
+        if (info.getArtifactUri() != null) {
+            spec.setModelDataSheet(info.getArtifactUri());
+        }
+
+        log.info("Created AiModelSpecification for logged model {}", info.getModelId());
+        return spec;
+    }
+
+    private void addLoggedModelCharacteristics(AiModelSpecificationCreate spec, LoggedModel.LoggedModelInfo info) {
+        spec.addSpecCharacteristicItem(createCharacteristicSpec(
+                "loggedModelId", "MLflow logged model ID", info.getModelId()));
+        spec.addSpecCharacteristicItem(createCharacteristicSpec(
+                "experimentId", "MLflow experiment ID", info.getExperimentId()));
+        spec.addSpecCharacteristicItem(createCharacteristicSpec(
+                "modelName", "MLflow model name", info.getName()));
+
+        if (info.getStatus() != null) {
+            spec.addSpecCharacteristicItem(createCharacteristicSpec(
+                    "lifecycleStatus", "MLflow logged model status", info.getStatus()));
+        }
+        if (info.getSourceRunId() != null) {
+            spec.addSpecCharacteristicItem(createCharacteristicSpec(
+                    "runId", "MLflow experiment run ID", info.getSourceRunId()));
+        }
+        if (info.getArtifactUri() != null) {
+            spec.addSpecCharacteristicItem(createCharacteristicSpec(
+                    "artifactUri", "MLflow artifact storage location", info.getArtifactUri()));
+        }
+        if (info.getModelType() != null && !info.getModelType().isEmpty()) {
+            spec.addSpecCharacteristicItem(createCharacteristicSpec(
+                    "modelType", "ML framework/flavor", info.getModelType()));
+        }
+        if (info.getCreationTimestampMs() > 0) {
+            spec.addSpecCharacteristicItem(createCharacteristicSpec(
+                    "creationTimestamp", "Model creation timestamp",
+                    String.valueOf(info.getCreationTimestampMs())));
+        }
+        if (info.getLastUpdatedTimestampMs() > 0) {
+            spec.addSpecCharacteristicItem(createCharacteristicSpec(
+                    "lastUpdatedTimestamp", "Model last update timestamp",
+                    String.valueOf(info.getLastUpdatedTimestampMs())));
+        }
+
+        // Build MLflow UI URL for logged model
+        String mlflowUrl = buildLoggedModelUrl(info.getExperimentId(), info.getModelId());
+        spec.addSpecCharacteristicItem(createCharacteristicSpec(
+                "mlflowUrl", "URL to view model in MLflow UI", mlflowUrl));
+    }
+
+    private void addLoggedModelParamCharacteristics(AiModelSpecificationCreate spec, LoggedModel loggedModel) {
+        if (loggedModel.getData() == null || loggedModel.getData().getParams() == null) return;
+
+        for (LoggedModel.Param param : loggedModel.getData().getParams()) {
+            spec.addSpecCharacteristicItem(createCharacteristicSpec(
+                    "param_" + param.getKey(), "Model parameter", param.getValue()));
+        }
+    }
+
+    private void addLoggedModelMetricCharacteristics(AiModelSpecificationCreate spec, LoggedModel loggedModel) {
+        if (loggedModel.getData() == null || loggedModel.getData().getMetrics() == null) return;
+
+        for (LoggedModel.Metric metric : loggedModel.getData().getMetrics()) {
+            if (isImportantMetric(metric.getKey())) {
+                spec.addSpecCharacteristicItem(createCharacteristicSpec(
+                        "metric_" + metric.getKey(), "Model evaluation metric",
+                        String.valueOf(metric.getValue())));
+            }
+        }
+    }
+
+    private void addLoggedModelTagCharacteristics(AiModelSpecificationCreate spec, LoggedModel.LoggedModelInfo info) {
+        if (info.getTags() == null || info.getTags().isEmpty()) return;
+
+        List<String> tagStrings = new ArrayList<>();
+        for (LoggedModel.Tag tag : info.getTags()) {
+            tagStrings.add(tag.getKey() + "=" + tag.getValue());
+        }
+        spec.addSpecCharacteristicItem(createCharacteristicSpec(
+                "tags", "MLflow model tags", String.join(", ", tagStrings)));
+    }
+
+    private String buildLoggedModelUrl(String experimentId, String modelId) {
+        if (mlflowTrackingUri == null || mlflowTrackingUri.isEmpty()) {
+            return "mlflow://experiments/" + experimentId + "/models/" + modelId;
+        }
+        String base = mlflowTrackingUri.endsWith("/")
+                ? mlflowTrackingUri.substring(0, mlflowTrackingUri.length() - 1)
+                : mlflowTrackingUri;
+        return base + "/#/experiments/" + experimentId + "/models/" + modelId;
+    }
+
+    private String getLoggedModelParam(LoggedModel model, String key) {
+        if (model.getData() == null || model.getData().getParams() == null) return null;
+        for (LoggedModel.Param param : model.getData().getParams()) {
+            if (key.equals(param.getKey())) return param.getValue();
+        }
+        return null;
+    }
+
+    /**
      * Builds the AiModelSpecificationCreate object from MLflow data.
      */
     private AiModelSpecificationCreate buildSpecificationCreate(ModelVersion modelVersion, RegisteredModel registeredModel, String baseUrl) {

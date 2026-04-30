@@ -3,6 +3,10 @@ package org.etsi.osl.controllers.tmf915.mappers;
 import org.etsi.osl.controllers.tmf915.model.AiModel;
 import org.etsi.osl.controllers.tmf915.model.AiModelCreate;
 import org.etsi.osl.controllers.tmf915.model.AiModelUpdate;
+import org.etsi.osl.controllers.tmf915.model.Characteristic;
+
+import java.util.ArrayList;
+import java.util.List;
 
 public final class AiModelMapper {
 
@@ -60,7 +64,7 @@ public final class AiModelMapper {
         if (src.getPlace() != null)                 target.setPlace(src.getPlace());
         if (src.getRelatedEntity() != null)         target.setRelatedEntity(src.getRelatedEntity());
         if (src.getRelatedParty() != null)          target.setRelatedParty(src.getRelatedParty());
-        if (src.getServiceCharacteristic() != null) target.setServiceCharacteristic(src.getServiceCharacteristic());
+        if (src.getServiceCharacteristic() != null) mergeServiceCharacteristics(target, src.getServiceCharacteristic());
         if (src.getServiceOrderItem() != null)      target.setServiceOrderItem(src.getServiceOrderItem());
         if (src.getServiceRelationship() != null)   target.setServiceRelationship(src.getServiceRelationship());
         if (src.getServiceSpecification() != null)  target.setServiceSpecification(src.getServiceSpecification());
@@ -69,5 +73,40 @@ public final class AiModelMapper {
         if (src.getSupportingResource() != null)    target.setSupportingResource(src.getSupportingResource());
         if (src.getSupportingService() != null)     target.setSupportingService(src.getSupportingService());
         if (src.getTrainingData() != null)          target.setTrainingData(src.getTrainingData());
+    }
+
+    private static void mergeServiceCharacteristics(AiModel target, List<Characteristic> incoming) {
+        List<Characteristic> current = target.getServiceCharacteristic();
+        if (current == null) {
+            current = new ArrayList<>();
+            target.setServiceCharacteristic(current);
+        }
+
+        for (Characteristic candidate : incoming) {
+            if (candidate == null) {
+                continue;
+            }
+
+            int existingIdx = indexByName(current, candidate.getName());
+            if (existingIdx >= 0) {
+                // Keep the same collection instance to avoid JPA orphan-removal issues.
+                current.set(existingIdx, candidate);
+            } else {
+                current.add(candidate);
+            }
+        }
+    }
+
+    private static int indexByName(List<Characteristic> items, String name) {
+        if (name == null) {
+            return -1;
+        }
+        for (int i = 0; i < items.size(); i++) {
+            Characteristic existing = items.get(i);
+            if (existing != null && name.equals(existing.getName())) {
+                return i;
+            }
+        }
+        return -1;
     }
 }

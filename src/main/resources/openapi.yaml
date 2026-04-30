@@ -4,7 +4,7 @@ info:
   title: Ai Management
   version: 4.0.0
 servers:
-- url: https://serverRoot/tmf-api/AiM/v4/
+- url: /tmf-api/AiM/v4/
 tags:
 - name: aiContractSpecification
 - name: aiModel
@@ -15859,8 +15859,8 @@ components:
         '@referredType':
           description: The actual type of the target instance when needed for disambiguation.
           type: string
-      required:
-      - id
+
+
       type: object
     TargetEntitySchema:
       description: The reference object to the schema and type of target entity which

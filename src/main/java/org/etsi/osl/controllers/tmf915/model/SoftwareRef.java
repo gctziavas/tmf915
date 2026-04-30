@@ -53,8 +53,7 @@ public class SoftwareRef {
    * unique identifier
    * @return id
    */
-  @NotNull 
-  @Schema(name = "id", description = "unique identifier", requiredMode = Schema.RequiredMode.REQUIRED)
+  @Schema(name = "id", description = "unique identifier", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
   @JsonProperty("id")
   public String getId() {
     return id;

@@ -56,6 +56,35 @@ public final class AiModelSpecificationMapper {
         if (src.getResourceSpecification() != null)         target.setResourceSpecification(src.getResourceSpecification());
         if (src.getServiceLevelSpecification() != null)     target.setServiceLevelSpecification(src.getServiceLevelSpecification());
         if (src.getServiceSpecRelationship() != null)       target.setServiceSpecRelationship(src.getServiceSpecRelationship());
-        if (src.getSpecCharacteristic() != null)            target.setSpecCharacteristic(src.getSpecCharacteristic());
+        if (src.getSpecCharacteristic() != null)            mergeSpecCharacteristics(target, src.getSpecCharacteristic());
+    }
+
+    private static void mergeSpecCharacteristics(AiModelSpecification target, java.util.List<org.etsi.osl.controllers.tmf915.model.CharacteristicSpecification> incoming) {
+        java.util.List<org.etsi.osl.controllers.tmf915.model.CharacteristicSpecification> current = target.getSpecCharacteristic();
+        if (current == null) {
+            current = new java.util.ArrayList<>();
+            target.setSpecCharacteristic(current);
+        }
+
+        for (org.etsi.osl.controllers.tmf915.model.CharacteristicSpecification candidate : incoming) {
+            if (candidate == null || candidate.getName() == null) {
+                continue;
+            }
+
+            int existingIdx = -1;
+            for (int i = 0; i < current.size(); i++) {
+                if (candidate.getName().equals(current.get(i).getName())) {
+                    existingIdx = i;
+                    break;
+                }
+            }
+
+            if (existingIdx >= 0) {
+                // Keep the same collection instance to avoid JPA orphan-removal issues.
+                current.set(existingIdx, candidate);
+            } else {
+                current.add(candidate);
+            }
+        }
     }
 }

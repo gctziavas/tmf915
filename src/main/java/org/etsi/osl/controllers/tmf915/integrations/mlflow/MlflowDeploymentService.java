@@ -90,7 +90,20 @@ public class MlflowDeploymentService {
      * @throws IOException if the build process cannot be started
      */
     public BuildResult buildImage(String runId, String imageName, String targetHost) throws IOException {
-        log.info("Building Docker image '{}' from run {} (env_manager={})", imageName, runId, envManager);
+        return buildImageFromUri("runs:/" + runId + "/model", imageName, targetHost);
+    }
+
+    /**
+     * Builds a Docker image from an explicit model URI (e.g. S3 artifact URI for logged models).
+     *
+     * @param modelUri   MLflow model URI (e.g. "runs:/abc/model" or "s3://bucket/path")
+     * @param imageName  Docker image name
+     * @param targetHost Docker host URI (e.g. "tcp://host:2375"), null for local
+     * @return BuildResult with outcome
+     * @throws IOException if the build process cannot be started
+     */
+    public BuildResult buildImageFromUri(String modelUri, String imageName, String targetHost) throws IOException {
+        log.info("Building Docker image '{}' from URI {} (env_manager={})", imageName, modelUri, envManager);
 
         // Try configured env-manager, fallback to virtualenv if "local" fails
         String[] managersToTry = "local".equals(envManager)
@@ -104,7 +117,7 @@ public class MlflowDeploymentService {
             cmd.add("models");
             cmd.add("build-docker");
             cmd.add("--model-uri");
-            cmd.add("runs:/" + runId + "/model");
+            cmd.add(modelUri);
             cmd.add("--name");
             cmd.add(imageName);
             cmd.add("--env-manager");
@@ -127,7 +140,7 @@ public class MlflowDeploymentService {
                 }
                 if (process.exitValue() == 0) {
                     log.info("Docker image '{}' built successfully (env_manager={})", imageName, mgr);
-                    return new BuildResult(imageName, runId, targetHost, true,
+                    return new BuildResult(imageName, modelUri, targetHost, true,
                             "Docker image built successfully (env_manager=" + mgr + ")");
                 }
                 String stderr = new String(process.getErrorStream().readAllBytes());
@@ -142,7 +155,7 @@ public class MlflowDeploymentService {
 
         String msg = "Build failed: " + (lastError != null ? lastError.getMessage() : "unknown error");
         log.error(msg);
-        return new BuildResult(imageName, runId, targetHost, false, msg);
+        return new BuildResult(imageName, modelUri, targetHost, false, msg);
     }
 
     /**
@@ -220,7 +233,7 @@ public class MlflowDeploymentService {
             cmd.add("run");
             cmd.add("-d");
             cmd.add("-p");
-            cmd.add(port + ":" + containerPort);
+            cmd.add("0.0.0.0:" + port + ":" + containerPort);
             if (containerName != null && !containerName.isEmpty()) {
                 cmd.add("--name");
                 cmd.add(containerName);
@@ -237,10 +250,24 @@ public class MlflowDeploymentService {
                 if (!finished) {
                     process.destroyForcibly();
                     lastError = "Docker command timed out on port " + port;
+                    if (containerName != null && !containerName.isEmpty()) {
+                        try {
+                            ProcessBuilder rmPb = new ProcessBuilder("docker", "rm", "-f", containerName);
+                            applyDockerHost(rmPb.environment(), targetHost);
+                            rmPb.start().waitFor(10, TimeUnit.SECONDS);
+                        } catch (Exception ignored) {}
+                    }
                     continue;
                 }
                 if (process.exitValue() != 0) {
                     lastError = new String(process.getErrorStream().readAllBytes()).trim();
+                    if (containerName != null && !containerName.isEmpty()) {
+                        try {
+                            ProcessBuilder rmPb = new ProcessBuilder("docker", "rm", "-f", containerName);
+                            applyDockerHost(rmPb.environment(), targetHost);
+                            rmPb.start().waitFor(10, TimeUnit.SECONDS);
+                        } catch (Exception ignored) {}
+                    }
                     continue;
                 }
 
@@ -336,6 +363,39 @@ public class MlflowDeploymentService {
             log.warn("Failed to get logs for container {}: {}", containerId, e.getMessage());
             return "";
         }
+    }
+
+    // ── Remove Image ────────────────────────────────────────────────────
+
+    /**
+     * Removes a Docker image.
+     *
+     * @param imageName image name to remove
+     * @param targetHost Docker host URI, or null/empty for local
+     * @return true if successful
+     */
+    public boolean removeImage(String imageName, String targetHost) {
+        try {
+            ProcessBuilder pb = new ProcessBuilder("docker", "rmi", "-f", imageName);
+            applyDockerHost(pb.environment(), targetHost);
+            Process process = pb.start();
+            boolean finished = process.waitFor(commandTimeoutSeconds, TimeUnit.SECONDS);
+            if (finished && process.exitValue() == 0) {
+                log.info("Image removed: {}", imageName);
+                return true;
+            }
+            return false;
+        } catch (IOException | InterruptedException e) {
+            log.warn("Failed to remove image {}: {}", imageName, e.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Removes a Docker image from the default Docker host.
+     */
+    public boolean removeImage(String imageName) {
+        return removeImage(imageName, dockerHost);
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────

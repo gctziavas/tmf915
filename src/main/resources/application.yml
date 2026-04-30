@@ -23,8 +23,8 @@ springdoc:
       clientsecret: "secret"
       use-pkce-with-authorization-code-grant: false
   oAuthFlow:
-    authorizationUrl: http://keycloak:8080/auth/realms/openslice/protocol/openid-connect/auth
-    tokenUrl: http://keycloak:8080/auth/realms/openslice/protocol/openid-connect/token
+    authorizationUrl: http://localhost:8080/auth/realms/openslice/protocol/openid-connect/auth
+    tokenUrl: http://localhost:8080/auth/realms/openslice/protocol/openid-connect/token
   show-actuator: true
 
 spring-addons:
@@ -39,9 +39,6 @@ spring:
   web:
     error:
       include-message: always
-  config:
-    activate:
-      on-profile: "default"
   application:
     name: openslice-aim915-api
   datasource:
@@ -69,7 +66,7 @@ spring:
       resourceserver:
         jwt:
           issuer-uri: http://keycloak:8080/auth/realms/openslice
-          jwk-set-uri: http://keycloak:8080/auth/realms/openslice/.well-known/openid-configuration
+          jwk-set-uri: http://keycloak:8080/auth/realms/openslice/protocol/openid-connect/certs
   jackson:
     date-format: org.etsi.osl.controllers.tmf915.RFC3339DateFormat
 logging:
@@ -124,3 +121,41 @@ aimodel: # AIM915 model management configuration
     # Local storage path for downloaded artifacts
     storage-path: "/tmp/aim915/artifacts"
     max-size: 1073741824 # 1 GB
+
+---
+# ── Docker Compose profile ──────────────────────────────────────────
+# Activated by SPRING_PROFILES_ACTIVE=docker (set in docker-compose.yml).
+# Environment variables in docker-compose.yml override datasource, Keycloak,
+# and MLflow URLs so that services resolve via Docker DNS names.
+spring:
+  config:
+    activate:
+      on-profile: "docker"
+  datasource:
+    url: jdbc:mysql://mysql:3306/aim915db?createDatabaseIfNotExist=true&useUnicode=true&characterEncoding=utf8&serverTimezone=UTC
+    username: root
+    password: letmein
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          jwk-set-uri: http://keycloak:8080/auth/realms/openslice/protocol/openid-connect/certs
+
+keycloak:
+  issuer-uri: http://localhost:8080/auth/realms/openslice
+
+spring-addons:
+  issuers:
+  - uri: http://localhost:8080/auth/realms/openslice
+    username-json-path: $.preferred_username
+    claims:
+    - jsonPath: $.realm_access.roles
+    - jsonPath: $.resource_access.*.roles
+
+mlflow:
+  tracking-uri: "http://172.16.100.94:5000"
+  s3-endpoint-url: "http://172.16.100.94:9010"
+  s3-access-key: "minioadmin"
+  s3-secret-key: "minioadmin"
+  docker:
+    host: "unix:///var/run/docker.sock"

@@ -63,6 +63,77 @@ public class MlflowModelService {
     // ========================================
 
     /**
+     * Creates an AiModel in RESERVED state from an MLflow Logged Model.
+     *
+     * @param specification The AiModelSpecification this model instantiates
+     * @param loggedModel   The logged model from MLflow
+     * @param experimentName The experiment name for display
+     * @return AiModelCreate in RESERVED state
+     */
+    public AiModelCreate createReservedAiModelFromLoggedModel(AiModelSpecification specification,
+                                                               LoggedModel loggedModel,
+                                                               String experimentName) {
+        LoggedModel.LoggedModelInfo info = loggedModel.getInfo();
+        log.info("Creating RESERVED AiModel for logged model: {} (experiment: {})",
+                info.getModelId(), experimentName);
+
+        AiModelCreate model = new AiModelCreate();
+        model.setAiModelSpecification(specification);
+
+        String baseName = experimentName + " " + info.getModelId();
+        String uniqueName = generateUniqueName(baseName);
+        model.setName(uniqueName);
+
+        // Use config.version as description if available
+        String configVersion = getLoggedModelParam(loggedModel, "config.version");
+        model.setDescription(configVersion != null
+                ? configVersion
+                : "Pending deployment of " + experimentName + " logged model " + info.getModelId());
+
+        model.setState(ServiceStateType.RESERVED);
+
+        addCharacteristic(model, "platform", "mlflow", "string");
+        addCharacteristic(model, "deploymentTarget", "DOCKER", "string");
+        addCharacteristic(model, "mlflowModelId", info.getModelId(), "string");
+        addCharacteristic(model, "mlflowRunId", info.getSourceRunId(), "string");
+        addCharacteristic(model, "mlflowExperimentId", info.getExperimentId(), "string");
+
+        log.info("Created RESERVED AiModel: {}", uniqueName);
+        return model;
+    }
+
+    /**
+     * Builds and deploys from a logged model ID.
+     *
+     * @param aiModel   persisted AiModel in RESERVED state
+     * @param modelId   MLflow logged model ID (e.g. "m-xxx")
+     * @param port      preferred host port (null → auto-scan)
+     * @param dockerHost Docker host URI (null → default)
+     * @return deploy result
+     * @throws IOException if any step fails
+     */
+    public MlflowDeploymentService.DeployResult buildAndDeployFromLoggedModel(AiModel aiModel,
+                                                                               String modelId,
+                                                                               Integer port,
+                                                                               String dockerHost) throws IOException {
+        LoggedModel lm = mlflowClient.getLoggedModel(modelId)
+                .orElseThrow(() -> new IOException("Logged model not found: " + modelId));
+
+        String artifactUri = lm.getInfo().getArtifactUri();
+        if (artifactUri == null || artifactUri.isEmpty()) {
+            throw new IOException("Logged model " + modelId + " has no artifact URI");
+        }
+
+        // Image name remains tied to the underlying MLflow artifact ID to allow caching and skipping rebuilds
+        String imageName = sanitizeImageName(modelId);
+
+        // Container name derives from the user-provided AiModel name + version, or fallback
+        String containerName = generateContainerName(aiModel, null);
+
+        return buildAndDeployFromUri(aiModel, artifactUri, imageName, containerName, port, dockerHost);
+    }
+
+    /**
      * Creates an AiModel in RESERVED state before deployment.
      *
      * @param specification The AiModelSpecification this model instantiates
@@ -164,6 +235,49 @@ public class MlflowModelService {
     }
 
     /**
+     * Builds a Docker image from an explicit model URI and deploys a container.
+     * Used for logged models whose artifacts are stored at a direct S3 URI.
+     *
+     * @param aiModel       persisted AiModel in RESERVED state
+     * @param modelUri      MLflow model URI (e.g. "s3://bucket/path/to/artifacts")
+     * @param imageName     Docker image name
+     * @param containerName optional container name
+     * @param port          preferred host port (null → auto-scan)
+     * @param dockerHost    Docker host URI (null → default from config)
+     * @return deploy result
+     * @throws IOException if build or deployment fails
+     */
+    public MlflowDeploymentService.DeployResult buildAndDeployFromUri(AiModel aiModel,
+                                                                       String modelUri, String imageName,
+                                                                       String containerName,
+                                                                       Integer port,
+                                                                       String dockerHost) throws IOException {
+
+        log.info("Build-and-deploy from URI: image={}, modelUri={}, aiModel={}", imageName, modelUri, aiModel.getId());
+
+        // Step 1 – build (skip if image already exists)
+        String targetHost = dockerHost != null ? dockerHost : deploymentService.getDockerHost();
+        if (!deploymentService.imageExists(imageName, targetHost)) {
+            MlflowDeploymentService.BuildResult buildResult =
+                    deploymentService.buildImageFromUri(modelUri, imageName, targetHost);
+            if (!buildResult.isSuccess()) {
+                throw new IOException("Image build failed: " + buildResult.getMessage());
+            }
+        } else {
+            log.info("Image '{}' already exists – skipping build", imageName);
+        }
+
+        // Step 2 – deploy container
+        MlflowDeploymentService.DeployResult deployResult =
+                deploymentService.deployContainer(imageName, containerName, port, targetHost);
+
+        // Step 3 – update AiModel to ACTIVE
+        updateModelAfterDeploy(aiModel, deployResult);
+
+        return deployResult;
+    }
+
+    /**
      * Convenience: resolves runId and imageName from MLflow metadata, then builds &amp; deploys.
      *
      * @param aiModel       persisted AiModel in RESERVED state
@@ -183,9 +297,39 @@ public class MlflowModelService {
         ModelVersion mv = getModelVersion(modelName, resolvedVersion);
         String runId = mv.getRunId();
         String imageName = sanitizeImageName(modelName) + "-v" + resolvedVersion;
-        String containerName = sanitizeImageName(modelName) + "-v" + resolvedVersion;
+        String containerName = generateContainerName(aiModel, resolvedVersion);
 
         return buildAndDeploy(aiModel, runId, imageName, containerName, port, dockerHost);
+    }
+
+    /**
+     * Generates a container name using the AiModel's name and version if available,
+     * otherwise falls back to appending a partial ID to ensure uniqueness.
+     */
+    private String generateContainerName(AiModel aiModel, String fallbackVersion) {
+        String safeName = (aiModel.getName() != null && !aiModel.getName().trim().isEmpty())
+                ? sanitizeImageName(aiModel.getName())
+                : "aimodel";
+
+        String versionToUse = null;
+        if (aiModel.getAiModelSpecification() != null 
+                && aiModel.getAiModelSpecification().getVersion() != null 
+                && !aiModel.getAiModelSpecification().getVersion().trim().isEmpty()) {
+            versionToUse = aiModel.getAiModelSpecification().getVersion();
+        } else if (fallbackVersion != null && !fallbackVersion.trim().isEmpty()) {
+            versionToUse = fallbackVersion;
+        }
+
+        if (aiModel.getName() != null && !aiModel.getName().trim().isEmpty() && versionToUse != null) {
+            String cleanVersion = sanitizeImageName(versionToUse);
+            if (cleanVersion.startsWith("m-")) {
+                cleanVersion = cleanVersion.substring(2);
+            }
+            return safeName + "-v" + cleanVersion;
+        }
+
+        // Fallback to our technique
+        return safeName + "-" + aiModel.getId().substring(0, Math.min(8, aiModel.getId().length()));
     }
 
     /**
@@ -240,6 +384,24 @@ public class MlflowModelService {
         return model;
     }
 
+    /**
+     * Removes a Docker image.
+     *
+     * @param imageName Docker image to remove
+     */
+    public void removeImage(String imageName) {
+        removeImage(imageName, null);
+    }
+
+    /**
+     * Removes a Docker image from a specific Docker host.
+     */
+    public void removeImage(String imageName, String dockerHost) {
+        log.info("Removing Docker image: {}", imageName);
+        String targetHost = dockerHost != null ? dockerHost : deploymentService.getDockerHost();
+        deploymentService.removeImage(imageName, targetHost);
+    }
+
     // ========================================
     // Internal helpers
     // ========================================
@@ -255,6 +417,9 @@ public class MlflowModelService {
         addCharacteristicToModel(aiModel, "containerId", deploy.getContainerId(), "string");
         addCharacteristicToModel(aiModel, "hostPort", String.valueOf(deploy.getHostPort()), "integer");
         addCharacteristicToModel(aiModel, "imageName", deploy.getImageName(), "string");
+        
+        String examplePayload = "{\n  \"dataframe_split\": {\n    \"columns\": [\"feature1\"],\n    \"data\": [[1.0]]\n  }\n}";
+        addCharacteristicToModel(aiModel, "inferencePayloadExample", examplePayload, "object");
 
         aiModel.setState(ServiceStateType.ACTIVE);
         aiModelRepository.updateAiModelState(aiModel.getId(), ServiceStateType.ACTIVE);
@@ -324,5 +489,13 @@ public class MlflowModelService {
      */
     private static String sanitizeImageName(String name) {
         return name.toLowerCase().replaceAll("[^a-z0-9._-]", "-");
+    }
+
+    private String getLoggedModelParam(LoggedModel model, String key) {
+        if (model.getData() == null || model.getData().getParams() == null) return null;
+        for (LoggedModel.Param param : model.getData().getParams()) {
+            if (key.equals(param.getKey())) return param.getValue();
+        }
+        return null;
     }
 }
