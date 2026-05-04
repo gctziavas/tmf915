@@ -2,8 +2,10 @@ package org.etsi.osl.controllers.tmf915.reposervices;
 
 import org.etsi.osl.controllers.tmf915.model.AiModel;
 import org.etsi.osl.controllers.tmf915.model.AiModelCreate;
+import org.etsi.osl.controllers.tmf915.model.AiModelSpecification;
 import org.etsi.osl.controllers.tmf915.model.AiModelUpdate;
 import org.etsi.osl.controllers.tmf915.model.ServiceStateType;
+import org.etsi.osl.controllers.tmf915.model.ServiceSpecificationRef;
 import org.etsi.osl.controllers.tmf915.repo.AiModelRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -75,6 +77,12 @@ class AiModelRepositoryServiceUnitTest {
         create.setCategory("nlp");
         create.setState(ServiceStateType.INACTIVE);
 
+        AiModelSpecification specification = new AiModelSpecification();
+        specification.setId("spec-1");
+        specification.setName("Spec Name");
+        specification.setVersion("1.0");
+        create.setAiModelSpecification(specification);
+
         when(aiModelRepository.save(any(AiModel.class)))
                 .thenAnswer(inv -> inv.getArgument(0));
 
@@ -84,7 +92,47 @@ class AiModelRepositoryServiceUnitTest {
         assertEquals("New Model", result.getName());
         assertEquals("nlp", result.getCategory());
         assertEquals(ServiceStateType.INACTIVE, result.getState());
+        assertEquals("AIModel", result.getAtType());
+        assertEquals("Service", result.getAtBaseType());
+        assertEquals("/tmf-api/AiM/v4/aiModel/" + result.getId(), result.getHref().toString());
+        assertNotNull(result.getAiModelSpecification());
+        assertEquals("AIModelSpecification", result.getAiModelSpecification().getAtType());
+        assertEquals("ServiceSpecification", result.getAiModelSpecification().getAtBaseType());
+        assertEquals("/tmf-api/AiM/v4/aiModelSpecification/spec-1", result.getAiModelSpecification().getHref().toString());
+        ServiceSpecificationRef specificationRef = result.getServiceSpecification();
+        assertNotNull(specificationRef);
+        assertEquals("spec-1", specificationRef.getId());
+        assertEquals("Spec Name", specificationRef.getName());
+        assertEquals("1.0", specificationRef.getVersion());
+        assertEquals("ServiceSpecification", specificationRef.getAtType());
+        assertEquals("ServiceSpecification", specificationRef.getAtBaseType());
+        assertEquals("AIModelSpecification", specificationRef.getAtReferredType());
         verify(aiModelRepository).save(any(AiModel.class));
+    }
+
+    @Test
+    void findAiModelById_normalizesReturnedModelAndSpecificationReference() {
+        AiModelSpecification specification = new AiModelSpecification();
+        specification.setId("spec-22");
+        specification.setName("Normalized Spec");
+        specification.setVersion("2.1");
+
+        AiModel model = new AiModel();
+        model.setId("model-1");
+        model.setAiModelSpecification(specification);
+
+        when(aiModelRepository.findById("model-1")).thenReturn(Optional.of(model));
+
+        AiModel result = service.findAiModelById("model-1");
+
+        assertEquals("AIModel", result.getAtType());
+        assertEquals("Service", result.getAtBaseType());
+        assertEquals("/tmf-api/AiM/v4/aiModel/model-1", result.getHref().toString());
+        assertEquals("AIModelSpecification", result.getAiModelSpecification().getAtType());
+        assertEquals("/tmf-api/AiM/v4/aiModelSpecification/spec-22", result.getAiModelSpecification().getHref().toString());
+        assertNotNull(result.getServiceSpecification());
+        assertEquals("spec-22", result.getServiceSpecification().getId());
+        assertEquals("AIModelSpecification", result.getServiceSpecification().getAtReferredType());
     }
 
     @Test

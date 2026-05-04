@@ -130,7 +130,24 @@ class AiModelSpecificationRepositoryServiceUnitTest {
         AiModelSpecification result = service.createAiModelSpecification(create);
 
         assertNotNull(result.getId());
+        assertEquals("AIModelSpecification", result.getAtType());
+        assertEquals("ServiceSpecification", result.getAtBaseType());
+        assertEquals("/tmf-api/AiM/v4/aiModelSpecification/" + result.getId(), result.getHref().toString());
         verify(aiModelSpecificationRepository).save(any(AiModelSpecification.class));
+    }
+
+    @Test
+    void findAiModelSpecificationById_normalizesReturnedSpecification() {
+        AiModelSpecification spec = new AiModelSpecification();
+        spec.setId("spec-1");
+
+        when(aiModelSpecificationRepository.findById("spec-1")).thenReturn(Optional.of(spec));
+
+        AiModelSpecification result = service.findAiModelSpecificationById("spec-1");
+
+        assertEquals("AIModelSpecification", result.getAtType());
+        assertEquals("ServiceSpecification", result.getAtBaseType());
+        assertEquals("/tmf-api/AiM/v4/aiModelSpecification/spec-1", result.getHref().toString());
     }
 
     @Test

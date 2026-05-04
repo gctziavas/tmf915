@@ -1,6 +1,9 @@
 package org.etsi.osl.controllers.tmf915.model;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
+
+import java.net.URI;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -58,5 +61,35 @@ public class AiModelUnitTest {
         assertEquals(1, model.getServiceCharacteristic().size());
         assertEquals("platform", model.getServiceCharacteristic().get(0).getName());
         assertEquals("mlflow", model.getServiceCharacteristic().get(0).getValue().toString());
+    }
+
+    @Test
+    public void testAiModelSpecificationSerializesAsReference() throws Exception {
+        AiModelSpecification specification = new AiModelSpecification();
+        specification.setId("spec-123");
+        specification.setHref(URI.create("/tmf-api/AiM/v4/aiModelSpecification/spec-123"));
+        specification.setName("Spec Name");
+        specification.setVersion("1.0");
+        specification.setAtBaseType("ServiceSpecification");
+        specification.setAtType("AIModelSpecification");
+        specification.setDescription("This should not be serialized in AiModel responses");
+
+        AiModel model = new AiModel();
+        model.setId("model-1");
+        model.setAiModelSpecification(specification);
+
+        ObjectMapper mapper = new ObjectMapper();
+        String json = mapper.writeValueAsString(model);
+
+        assertTrue(json.contains("\"aiModelSpecification\""));
+        assertTrue(json.contains("\"id\":\"spec-123\""));
+        assertTrue(json.contains("\"href\":\"/tmf-api/AiM/v4/aiModelSpecification/spec-123\""));
+        assertTrue(json.contains("\"name\":\"Spec Name\""));
+        assertTrue(json.contains("\"version\":\"1.0\""));
+        assertTrue(json.contains("\"@baseType\":\"ServiceSpecification\""));
+        assertTrue(json.contains("\"@type\":\"AIModelSpecification\""));
+        assertFalse(json.contains("This should not be serialized in AiModel responses"));
+        assertFalse(json.contains("deploymentRecord"));
+        assertFalse(json.contains("specCharacteristic"));
     }
 }

@@ -94,6 +94,13 @@ public class AiModelLifecycleService {
             enrichCharacteristicsFromSpecification(aiModelCreate);
         }
 
+        if (aiModelCreate.getName() == null || aiModelCreate.getName().isBlank()) {
+            AiModelSpecification spec = resolveSpecification(aiModelCreate.getAiModelSpecification());
+            if (spec != null && spec.getName() != null && !spec.getName().isBlank()) {
+                aiModelCreate.setName(deriveUniqueName(spec.getName(), spec.getVersion()));
+            }
+        }
+
         AiModel created = repoService.createAiModel(aiModelCreate);
         log.info("AiModel {} created in state {}", created.getId(), requestedState);
 
@@ -426,5 +433,15 @@ public class AiModelLifecycleService {
         characteristic.setValue(value);
         characteristic.setValueType(valueType);
         return characteristic;
+    }
+
+    private String deriveUniqueName(String specName, String specVersion) {
+        String base = specVersion != null && !specVersion.isBlank()
+                ? specName + "-v-" + specVersion
+                : specName;
+        List<AiModel> existing = repoService.findByNamePrefix(base + "-");
+        // also check exact base name to account for any legacy entries
+        int count = existing.size() + 1;
+        return base + "-" + count;
     }
 }
