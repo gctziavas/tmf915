@@ -9,6 +9,10 @@ server:
   ssl:
     enabled: false
 
+openapi:
+  aiManagement:
+    base-path: /AiM/v4
+
 springdoc:
   version: '@springdoc.version@'
   writer-with-default-pretty-printer: true

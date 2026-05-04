@@ -16,6 +16,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Periodically synchronises MLflow models with TMF 915
@@ -45,6 +47,10 @@ public class MlflowSyncService {
     private final MlflowClientService mlflowClient;
     private final MlflowSpecificationService specificationService;
     private final AiModelSpecificationRepositoryService specificationRepository;
+
+    private final Set<String> syncedModels = ConcurrentHashMap.newKeySet();
+    private final Map<String, Long> nextArtifactCheckTime = new ConcurrentHashMap<>();
+    private static final long MISSING_ARTIFACTS_BACKOFF_MS = 10 * 60 * 1000; // 10 minutes backoff
 
     @Value("${mlflow.sync.base-url:}")
     private String baseUrl;
@@ -89,6 +95,10 @@ public class MlflowSyncService {
             return false;
         }
 
+        // De-prioritise old runs: search backwards or shuffle? We'll just reverse it so the
+        // newest models get processed first!
+        java.util.Collections.reverse(loggedModels);
+
         // Build experiment name cache
         Map<String, String> experimentNames = new LinkedHashMap<>();
 
@@ -103,10 +113,39 @@ public class MlflowSyncService {
             String experimentName = experimentNames.computeIfAbsent(
                     info.getExperimentId(), this::resolveExperimentName);
 
+            String modelKey = experimentName + ":" + modelId;
+
+            // 1. Check positive cache (avoid DB lookup if already synced)
+            if (syncedModels.contains(modelKey)) {
+                skipped++;
+                continue;
+            }
+
+            // 2. Check DB
             // Check if we already have a matching specification (name=experimentName, version=modelId)
             AiModelSpecification existing =
                     specificationRepository.findAiModelSpecificationByNameAndVersion(experimentName, modelId);
             if (existing != null) {
+                syncedModels.add(modelKey);
+                skipped++;
+                continue;
+            }
+
+            // 3. Check negative cache (backoff on missing artifacts)
+            long now = System.currentTimeMillis();
+            Long nextCheck = nextArtifactCheckTime.get(modelKey);
+            if (nextCheck != null && now < nextCheck) {
+                skipped++;
+                continue;
+            }
+
+            // 4. Perform very fast MinIO check directly via artifact URI
+            if (!mlflowClient.hasArtifactsByUri(info.getArtifactUri())) {
+                if (nextCheck == null) {
+                    log.info("MLflow sync: skipped logged model {} (experiment: {}) because no artifacts were found in backend/MinIO (at {}). Backing off for 10 minutes.",
+                            modelId, experimentName, info.getArtifactUri());
+                }
+                nextArtifactCheckTime.put(modelKey, now + MISSING_ARTIFACTS_BACKOFF_MS);
                 skipped++;
                 continue;
             }
@@ -115,8 +154,15 @@ public class MlflowSyncService {
                 AiModelSpecificationCreate specCreate =
                         specificationService.createSpecificationFromLoggedModel(lm, experimentName, baseUrl);
                 specificationRepository.createAiModelSpecification(specCreate);
-                log.info("MLflow sync: created AiModelSpecification for logged model {} (experiment: {})",
-                        modelId, experimentName);
+                if (nextCheck != null) {
+                    log.info("MLflow sync: created AiModelSpecification for logged model {} (experiment: {}) after previous backoff",
+                            modelId, experimentName);
+                } else {
+                    log.info("MLflow sync: created AiModelSpecification for logged model {} (experiment: {})",
+                            modelId, experimentName);
+                }
+                syncedModels.add(modelKey);
+                nextArtifactCheckTime.remove(modelKey);
                 created++;
             } catch (Exception e) {
                 log.warn("MLflow sync: failed to create specification for logged model {}: {}",
@@ -159,6 +205,12 @@ public class MlflowSyncService {
             AiModelSpecification existing =
                     specificationRepository.findAiModelSpecificationByNameAndVersion(name, version);
             if (existing != null) {
+                skipped++;
+                continue;
+            }
+
+            if (!mlflowClient.hasArtifactsByUri("s3://mlflow/" + mv.getSource())) {
+                log.info("MLflow sync: skipped model {} v{} because no artifacts were found in backend/MinIO.", name, version);
                 skipped++;
                 continue;
             }

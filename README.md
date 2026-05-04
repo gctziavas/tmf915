@@ -221,18 +221,18 @@ Platform-specific work (Docker builds, container management, etc.) is delegated 
               ┌────────────────────────────┐
               │  AiModelLifecycleService   │   deployment/
               │                            │
-              │  State validation           │
-              │  Default startDate/endDate  │
-              │  Delegates to scheduler     │
+              │  State validation          │
+              │  Default startDate/endDate │
+              │  Delegates to scheduler    │
               └─────────────┬──────────────┘
                             │
                             ▼
               ┌────────────────────────────┐
               │  DeploymentScheduler       │   deployment/
               │                            │
-              │  ScheduledExecutorService   │
-              │  Startup recovery           │
-              │  Task tracking              │
+              │  ScheduledExecutorService  │
+              │  Startup recovery          │
+              │  Task tracking             │
               └─────────────┬──────────────┘
                             │  finds via supports()
           ┌─────────────────┼─────────────────┐
@@ -245,22 +245,22 @@ Platform-specific work (Docker builds, container management, etc.) is delegated 
 └────────┬─────────┘                └──────────────────┘
          │
          ▼
-┌──────────────────────────────────────────────────────────────────────┐
-│                     integrations/mlflow/                              │
-│                                                                      │
+┌─────────────────────────────────────────────────────────────────────┐
+│                     integrations/mlflow/                            │
+│                                                                     │
 │  ┌─────────────────┐  ┌──────────────────┐  ┌────────────────────┐  │
 │  │ MlflowModel     │  │ MlflowDeployment │  │ MlflowClient       │  │
-│  │ Service          │  │ Service          │  │ Service            │  │
-│  │                  │  │                  │  │                    │  │
-│  │ build + deploy   │  │ Docker CLI       │  │ MLflow Java client │  │
-│  │ orchestration    │  │ subprocesses     │  │ (v2.11.1)          │  │
-│  └──────────────────┘  └──────────────────┘  └────────────────────┘  │
-│                                                                      │
+│  │ Service         │  │ Service          │  │ Service            │  │
+│  │                 │  │                  │  │                    │  │
+│  │ build + deploy  │  │ Docker CLI       │  │ MLflow Java client │  │
+│  │ orchestration   │  │ subprocesses     │  │ (v2.11.1)          │  │
+│  └─────────────────┘  └──────────────────┘  └────────────────────┘  │
+│                                                                     │
 │  ┌─────────────────┐  ┌──────────────────┐  ┌────────────────────┐  │
 │  │ MlflowSync      │  │ MlflowSpec       │  │ MlflowConfiguration│  │
-│  │ Service          │  │ Service          │  │                    │  │
+│  │ Service         │  │ Service          │  │                    │  │
 │  └─────────────────┘  └──────────────────┘  └────────────────────┘  │
-└──────────────────────────────────────────────────────────────────────┘
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Deployment Package (platform-agnostic)

@@ -13,6 +13,7 @@ import org.mlflow.tracking.Page;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpEntity;
@@ -29,6 +30,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
+import io.minio.ListObjectsArgs;
+import io.minio.MinioClient;
+import io.minio.Result;
+import io.minio.messages.Item;
+
 @Service
 @ConditionalOnProperty(name = "mlflow.enabled", havingValue = "true")
 public class MlflowClientService {
@@ -38,12 +44,24 @@ public class MlflowClientService {
     private final MlflowClient mlflowClient;
     private final RestTemplate restTemplate;
     private final ObjectMapper objectMapper;
+    private MinioClient minioClient;
 
     public MlflowClientService(MlflowClient mlflowClient,
-                                @Qualifier("mlflowRestTemplate") RestTemplate restTemplate) {
+                                @Qualifier("mlflowRestTemplate") RestTemplate restTemplate,
+                                @Value("${mlflow.s3.endpoint.url:}") String s3EndpointUrl,
+                                @Value("${mlflow.s3.access.key:}") String s3AccessKey,
+                                @Value("${mlflow.s3.secret.key:}") String s3SecretKey) {
         this.mlflowClient = mlflowClient;
         this.restTemplate = restTemplate;
         this.objectMapper = new ObjectMapper();
+        
+        if (!s3EndpointUrl.isEmpty() && !s3AccessKey.isEmpty() && !s3SecretKey.isEmpty()) {
+            log.info("Initialising MinioClient for native S3 artifact checking");
+            this.minioClient = MinioClient.builder()
+                    .endpoint(s3EndpointUrl)
+                    .credentials(s3AccessKey, s3SecretKey)
+                    .build();
+        }
     }
 
     // ── Logged Models (new MLflow 2.x API) ──────────────────────────────
@@ -224,6 +242,46 @@ public class MlflowClientService {
     }
 
     // ── Runs ────────────────────────────────────────────────────────────
+
+    public boolean hasArtifactsByUri(String artifactUri) {
+        if (artifactUri == null || !artifactUri.startsWith("s3://") || minioClient == null) {
+            return false;
+        }
+        try {
+            // Remove "s3://"
+            String withoutScheme = artifactUri.substring(5);
+            int slashIdx = withoutScheme.indexOf("/");
+            if (slashIdx <= 0) return false;
+            String bucket = withoutScheme.substring(0, slashIdx);
+            String prefix = withoutScheme.substring(slashIdx + 1);
+            if (!prefix.endsWith("/")) {
+                prefix = prefix + "/";
+            }
+
+            Iterable<Result<Item>> results = minioClient.listObjects(
+                    ListObjectsArgs.builder()
+                            .bucket(bucket)
+                            .prefix(prefix)
+                            .maxKeys(1) // We only care if AT LEAST ONE exists!
+                            .recursive(true)
+                            .build()
+            );
+            return results.iterator().hasNext();
+        } catch (Exception e) {
+            log.warn("Failed to check artifacts directly via MinIO for URI {}: {}", artifactUri, e.getMessage());
+            return false;
+        }
+    }
+
+    public boolean hasArtifacts(String runId) {
+        if (runId == null || runId.trim().isEmpty()) return false;
+        try {
+            return !mlflowClient.listArtifacts(runId).isEmpty();
+        } catch (Exception e) {
+            log.warn("Failed to list artifacts for run {}: {}", runId, e.getMessage());
+            return false;
+        }
+    }
 
     public Optional<Run> getRun(String runId) {
         log.debug("Fetching run: {}", runId);

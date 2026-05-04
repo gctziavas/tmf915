@@ -1,0 +1,38 @@
+@startuml
+participant Scheduler as "TMF915 Scheduled Sync"
+participant S3 as "MinIO (S3 Backend)"
+participant MLflowClient as "MLflow Tracking Server"
+participant DB as "TMF915 Catalog DB"
+participant API as "/aiModel API"
+participant Lifecycle as "Lifecycle & Deployer"
+participant MLflowCLI as "MLflow CLI"
+participant Docker as "Docker Engine"
+
+== 1. High Speed Synchronization Phase ==
+Scheduler -> MLflowClient: Fetch Logged Models / Registry
+MLflowClient --> Scheduler: Return metadata mapping
+Scheduler -> S3: fast HEAD request (MinioClient) check artifact URIs
+S3 --> Scheduler: File validation true/false
+Scheduler -> DB: create AiModelSpecification (Positive/Negative Caching used)
+
+== 2. Instantiation Request ==
+API -> Lifecycle: POST /aiModel (state: RESERVED, specId: <id>)
+Lifecycle -> DB: Persist AiModel (RESERVED)
+
+== 3. Deployment & Build Caching ==
+Lifecycle -> Docker: ProcessBuilder: check if image 'm-<mlflow-model-id>' exists
+Docker --> Lifecycle: Returns Image status
+alt Image does not exist
+  Lifecycle -> MLflowCLI: mlflow models build-docker --model-uri <uri>
+  MLflowCLI --> Lifecycle: Docker image built
+end
+
+== 4. Container Provisioning ==
+Lifecycle -> Lifecycle: generateContainerName(AiModel.name + version limits)
+Lifecycle -> Docker: docker run -d -p <port> --name <container-name> m-<mlflow-model-id>
+Docker --> Lifecycle: Container Started
+
+== 5. Response Structuring ==
+Lifecycle -> DB: updateAiModelState(ACTIVE / DESIGNED)
+Lifecycle --> API: Hide 'serviceSpecification', respond with 'aiModelSpecification'
+@enduml

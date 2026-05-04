@@ -1,11 +1,14 @@
 package org.etsi.osl.controllers.tmf915.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.annotation.Generated;
 import jakarta.persistence.Entity;
 import jakarta.persistence.*;
 import jakarta.validation.Valid;
+import org.etsi.osl.controllers.tmf915.mappers.AiModelSpecificationRefSerializer;
 import org.etsi.osl.controllers.tmf915.mappers.converters.*;
 import org.jspecify.annotations.Nullable;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -470,6 +473,7 @@ public class AiModel {
   @Valid 
   @Schema(name = "aiModelSpecification", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
   @JsonProperty("aiModelSpecification")
+  @JsonSerialize(using = AiModelSpecificationRefSerializer.class)
   public @Nullable AiModelSpecification getAiModelSpecification() {
     return aiModelSpecification;
   }
@@ -743,7 +747,7 @@ public class AiModel {
    */
   @Valid 
   @Schema(name = "serviceSpecification", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
-  @JsonProperty("serviceSpecification")
+  @JsonIgnore
   public @Nullable ServiceSpecificationRef getServiceSpecification() {
     return serviceSpecification;
   }
