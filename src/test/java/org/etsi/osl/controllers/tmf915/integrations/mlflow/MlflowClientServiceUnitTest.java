@@ -44,7 +44,7 @@ class MlflowClientServiceUnitTest {
 
     @BeforeEach
     void setUp() {
-        clientService = new MlflowClientService(mlflowClient, restTemplate);
+        clientService = new MlflowClientService(mlflowClient, restTemplate, "", "", "");
     }
 
     @Test

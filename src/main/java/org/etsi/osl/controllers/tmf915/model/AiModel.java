@@ -1,5 +1,6 @@
 package org.etsi.osl.controllers.tmf915.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -746,7 +747,7 @@ public class AiModel {
    */
   @Valid 
   @Schema(name = "serviceSpecification", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
-  @JsonProperty("serviceSpecification")
+  @JsonIgnore
   public @Nullable ServiceSpecificationRef getServiceSpecification() {
     return serviceSpecification;
   }
