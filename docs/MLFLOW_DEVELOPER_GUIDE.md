@@ -178,7 +178,7 @@ TOKEN=$(curl -s -X POST http://localhost:8080/auth/realms/openslice/protocol/ope
 
 # List specs — look for your experiment name
 curl -s -H "Authorization: Bearer $TOKEN" \
-  "http://localhost:13082/tmf-api/tmf-api/AiM/v4/aiModelSpecification" \
+  "http://localhost:13082/tmf-api/AiM/v4/aiModelSpecification" \
   | python3 -m json.tool | grep -E '"name"|"version"|"id"'
 ```
 
@@ -193,7 +193,7 @@ Once your spec is synced, create an `AiModel` instance in `reserved` state. The 
 ```bash
 SPEC_ID="<paste-your-spec-id-here>"
 
-curl -s -X POST http://localhost:13082/tmf-api/tmf-api/AiM/v4/aiModel \
+curl -s -X POST http://localhost:13082/tmf-api/AiM/v4/aiModel \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -217,7 +217,7 @@ curl -s -X POST http://localhost:13082/tmf-api/tmf-api/AiM/v4/aiModel \
 MODEL_ID="<id-from-POST-response>"
 
 curl -s -H "Authorization: Bearer $TOKEN" \
-  "http://localhost:13082/tmf-api/tmf-api/AiM/v4/aiModel/$MODEL_ID" \
+  "http://localhost:13082/tmf-api/AiM/v4/aiModel/$MODEL_ID" \
   | python3 -c "
 import sys, json
 obj = json.load(sys.stdin)
@@ -264,7 +264,7 @@ PATCH the model to `inactive`. The server will stop and remove the container and
 
 ```bash
 curl -s -X PATCH \
-  "http://localhost:13082/tmf-api/tmf-api/AiM/v4/aiModel/$MODEL_ID" \
+  "http://localhost:13082/tmf-api/AiM/v4/aiModel/$MODEL_ID" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"state": "inactive"}'

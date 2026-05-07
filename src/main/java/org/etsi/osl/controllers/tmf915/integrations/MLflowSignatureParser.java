@@ -16,10 +16,10 @@ public class MLflowSignatureParser {
      * inference JSON request body based on its signature.
      * 
      * @param mlmodelYaml The MLmodel YAML string content
-     * @return A JSON string representing the dataframe_split request body
+     * @return A Jackson JsonNode representing the dataframe_split request body
      * @throws IOException If parsing fails
      */
-    public static String generateInferencePayload(String mlmodelYaml) throws IOException {
+    public static JsonNode generateInferencePayload(String mlmodelYaml) throws IOException {
         // MLmodel is typically YAML, so we use Jackson with a YAMLFactory
         ObjectMapper yamlMapper = new ObjectMapper(new YAMLFactory());
         ObjectMapper jsonMapper = new ObjectMapper();
@@ -73,7 +73,7 @@ public class MLflowSignatureParser {
         ObjectNode payload = jsonMapper.createObjectNode();
         payload.set("dataframe_split", dataframeSplit);
 
-        // Serialize back to nicely formatted JSON
-        return jsonMapper.writerWithDefaultPrettyPrinter().writeValueAsString(payload);
+        // Return the JsonNode object directly instead of a String
+        return payload;
     }
 }

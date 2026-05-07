@@ -418,17 +418,23 @@ public class MlflowModelService {
         addCharacteristicToModel(aiModel, "hostPort", String.valueOf(deploy.getHostPort()), "integer");
         addCharacteristicToModel(aiModel, "imageName", deploy.getImageName(), "string");
         
-        String examplePayload;
+        Object examplePayload;
         try {
             String targetHost = deploy.getDockerHost() != null ? deploy.getDockerHost() : deploymentService.getDockerHost();
             String mlmodelYaml = deploymentService.readMlmodelFromContainer(deploy.getContainerId(), targetHost);
             examplePayload = org.etsi.osl.controllers.tmf915.integrations.MLflowSignatureParser.generateInferencePayload(mlmodelYaml);
         } catch (Exception e) {
             log.warn("Failed to generate dynamic inference payload from container {}, falling back to default dummy payload. Reason: {}", deploy.getContainerId(), e.getMessage());
-            examplePayload = "{\n  \"message\": \"WARNING: Could not extract signature from MLmodel\",\n  \"dataframe_split\": {\n    \"columns\": [\"feature1\"],\n    \"data\": [[1.0]]\n  }\n}";
+            
+            // Fallback to unstructured parsed object so it doesn't escape via Jackson
+            try {
+                examplePayload = new com.fasterxml.jackson.databind.ObjectMapper().readTree("{\n  \"message\": \"WARNING: Could not extract signature from MLmodel\",\n  \"dataframe_split\": {\n    \"columns\": [\"feature1\"],\n    \"data\": [[1.0]]\n  }\n}");
+            } catch (Exception parseEx) {
+                 examplePayload = "fallback_error";
+            }
         }
         
-        addCharacteristicToModel(aiModel, "inferencePayloadExample", examplePayload, "object");
+        addCharacteristicToModelObj(aiModel, "inferencePayloadExample", examplePayload, "object");
 
         aiModel.setState(ServiceStateType.ACTIVE);
         aiModelRepository.updateAiModelState(aiModel.getId(), ServiceStateType.ACTIVE);
@@ -436,6 +442,10 @@ public class MlflowModelService {
     }
 
     private void addCharacteristicToModel(AiModel model, String name, String value, String valueType) {
+        addCharacteristicToModelObj(model, name, value, valueType);
+    }
+    
+    private void addCharacteristicToModelObj(AiModel model, String name, Object value, String valueType) {
         Characteristic characteristic = new Characteristic();
         characteristic.setName(name);
         characteristic.setValue(value);
