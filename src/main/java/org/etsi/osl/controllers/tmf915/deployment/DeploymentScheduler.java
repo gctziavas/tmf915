@@ -132,13 +132,18 @@ public class DeploymentScheduler {
         OffsetDateTime endDate = aiModel.getEndDate();
 
         if (startDate == null || !startDate.isAfter(now)) {
-            // Deploy now
-            log.info("Deploying AiModel {} immediately (startDate={})", id, startDate);
-            AiModel deployed = executeDeployment(id);
-            if (endDate != null) {
-                scheduleUndeploy(id, endDate);
-            }
-            return deployed != null ? deployed : aiModel;
+            // Deploy now in background to prevent HTTP blocking
+            log.info("Scheduling immediate background deployment for AiModel {} (startDate={})", id, startDate);
+            cancelExisting(deployTasks, id);
+            ScheduledFuture<?> deployFuture = executor.schedule(() -> {
+                deployTasks.remove(id);
+                executeDeployment(id);
+                if (endDate != null) {
+                    scheduleUndeploy(id, endDate);
+                }
+            }, 0, TimeUnit.MILLISECONDS);
+            deployTasks.put(id, deployFuture);
+            return aiModel;
         }
 
         // startDate is in the future → schedule

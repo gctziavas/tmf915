@@ -29,9 +29,12 @@ public class AiModelRepositoryService {
     private static final String SERVICE_SPECIFICATION_TYPE = "ServiceSpecification";
 
     private final AiModelRepository aiModelRepository;
+    private final AiModelSpecificationRepositoryService aiModelSpecificationRepositoryService;
 
-    public AiModelRepositoryService(AiModelRepository aiModelRepository) {
+    public AiModelRepositoryService(AiModelRepository aiModelRepository,
+                                    AiModelSpecificationRepositoryService aiModelSpecificationRepositoryService) {
         this.aiModelRepository = aiModelRepository;
+        this.aiModelSpecificationRepositoryService = aiModelSpecificationRepositoryService;
     }
 
     public List<AiModel> findAllAiModels() {
@@ -50,6 +53,15 @@ public class AiModelRepositoryService {
 
     public AiModel createAiModel(AiModelCreate aiModelCreate) {
         log.info("AiModel CREATE: {}", aiModelCreate);
+        
+        if (aiModelCreate.getServiceSpecification() != null && aiModelCreate.getServiceSpecification().getId() != null) {
+            String specId = aiModelCreate.getServiceSpecification().getId();
+            AiModelSpecification spec = aiModelSpecificationRepositoryService.findAiModelSpecificationById(specId);
+            if (spec == null) {
+                throw new IllegalArgumentException("No AiModelSpecification with ID: " + specId);
+            }
+        }
+        
         AiModel aiModel = AiModelMapper.fromCreate(aiModelCreate);
         aiModel.setId(UUID.randomUUID().toString());
         normalize(aiModel);

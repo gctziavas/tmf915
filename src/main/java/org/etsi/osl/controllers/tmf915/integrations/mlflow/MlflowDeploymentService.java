@@ -122,6 +122,7 @@ public class MlflowDeploymentService {
             cmd.add(imageName);
             cmd.add("--env-manager");
             cmd.add(mgr);
+            cmd.add("--enable-mlserver");
 
             try {
                 ProcessBuilder pb = new ProcessBuilder(cmd);
@@ -234,6 +235,7 @@ public class MlflowDeploymentService {
             cmd.add("-d");
             cmd.add("-p");
             cmd.add("0.0.0.0:" + port + ":" + containerPort);
+            
             if (containerName != null && !containerName.isEmpty()) {
                 cmd.add("--name");
                 cmd.add(containerName);
@@ -326,6 +328,21 @@ public class MlflowDeploymentService {
             log.warn("Failed to stop container {}: {}", containerId, e.getMessage());
             return false;
         }
+    }
+
+    /**
+     * Reads the MLmodel file directly from the running container.
+     */
+    public String readMlmodelFromContainer(String containerId, String targetHost) throws IOException, InterruptedException {
+        ProcessBuilder pb = new ProcessBuilder("docker", "exec", containerId, "cat", "/opt/ml/model/MLmodel");
+        applyDockerHost(pb.environment(), targetHost);
+        Process process = pb.start();
+        String output = new String(process.getInputStream().readAllBytes());
+        boolean finished = process.waitFor(commandTimeoutSeconds, TimeUnit.SECONDS);
+        if (!finished || process.exitValue() != 0) {
+            throw new IOException("Failed to read MLmodel from container: " + new String(process.getErrorStream().readAllBytes()));
+        }
+        return output;
     }
 
     /**

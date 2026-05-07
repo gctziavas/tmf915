@@ -418,7 +418,16 @@ public class MlflowModelService {
         addCharacteristicToModel(aiModel, "hostPort", String.valueOf(deploy.getHostPort()), "integer");
         addCharacteristicToModel(aiModel, "imageName", deploy.getImageName(), "string");
         
-        String examplePayload = "{\n  \"dataframe_split\": {\n    \"columns\": [\"feature1\"],\n    \"data\": [[1.0]]\n  }\n}";
+        String examplePayload;
+        try {
+            String targetHost = deploy.getDockerHost() != null ? deploy.getDockerHost() : deploymentService.getDockerHost();
+            String mlmodelYaml = deploymentService.readMlmodelFromContainer(deploy.getContainerId(), targetHost);
+            examplePayload = org.etsi.osl.controllers.tmf915.integrations.MLflowSignatureParser.generateInferencePayload(mlmodelYaml);
+        } catch (Exception e) {
+            log.warn("Failed to generate dynamic inference payload from container {}, falling back to default dummy payload. Reason: {}", deploy.getContainerId(), e.getMessage());
+            examplePayload = "{\n  \"message\": \"WARNING: Could not extract signature from MLmodel\",\n  \"dataframe_split\": {\n    \"columns\": [\"feature1\"],\n    \"data\": [[1.0]]\n  }\n}";
+        }
+        
         addCharacteristicToModel(aiModel, "inferencePayloadExample", examplePayload, "object");
 
         aiModel.setState(ServiceStateType.ACTIVE);
