@@ -11,6 +11,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionStatus;
 
@@ -37,11 +38,14 @@ public class AiModelLifecycleServiceTest {
     @Mock
     private PlatformTransactionManager transactionManager;
 
+    @Mock
+    private ApplicationEventPublisher eventPublisher;
+
     private AiModelLifecycleService service;
 
     @BeforeEach
     public void setup() {
-        service = new AiModelLifecycleService(repoService, specRepoService, scheduler, Collections.emptyList(), transactionManager);
+        service = new AiModelLifecycleService(repoService, specRepoService, scheduler, Collections.emptyList(), transactionManager, eventPublisher);
     }
 
     @Test
