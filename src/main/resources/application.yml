@@ -84,9 +84,6 @@ logging:
     console: "%d{HH:mm:ss.SSS} [%t] %-5level %logger{36} - %msg%n"
     file: "%d %p %c{1.} [%t] %m%n"
 
-oauthsign:
-  key: "EK97Y7Y9WPGG1MEG"
-
 mlflow: # MLflow configuration for AIM915 model management
   enabled: true
   tracking-uri: "http://127.0.0.1:5000"
@@ -115,16 +112,11 @@ mlflow: # MLflow configuration for AIM915 model management
 
 aimodel: # AIM915 model management configuration
   deployment:
-    default-platform: mlflow # Options: mlflow, seldon, kserve, triton, custom
     # Base URL for model serving endpoints (used in AiModel creation)
     # Leave empty to auto-generate based on server configuration
     serving-base-url: ""
   specification:
     default-lifecycle-status: "Active"
-  artifacts:
-    # Local storage path for downloaded artifacts
-    storage-path: "/tmp/aim915/artifacts"
-    max-size: 1073741824 # 1 GB
 
 ---
 # ── Docker Compose profile ──────────────────────────────────────────

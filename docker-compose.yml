@@ -41,8 +41,7 @@ services:
         condition: service_healthy
 
   # ── TMF 915 AI Management API ─────────────────────────────────────
-  # MLflow (http://172.16.100.94:5000) and MinIO (http://172.16.100.94:9010)
-  # run externally — not managed by this compose file.
+  # MLflow and MinIO can be run externally or locally via profiles.
   tmf915:
     build:
       context: .
@@ -59,10 +58,10 @@ services:
       SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI: http://172.16.100.94:8080/auth/realms/openslice
       KEYCLOAK_ISSUER_URI: http://172.16.100.94:8080/auth/realms/openslice
       SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWK_SET_URI: http://keycloak:8080/auth/realms/openslice/protocol/openid-connect/certs
-      # ── MLflow (external) ──
+      # ── MLflow (Configurable via env, defaults to external) ──
       MLFLOW_ENABLED: "true"
-      MLFLOW_TRACKING_URI: http://172.16.100.94:5000
-      MLFLOW_S3_ENDPOINT_URL: http://172.16.100.94:9010
+      MLFLOW_TRACKING_URI: ${MLFLOW_TRACKING_URI:-http://172.16.100.94:5000}
+      MLFLOW_S3_ENDPOINT_URL: ${MLFLOW_S3_ENDPOINT_URL:-http://172.16.100.94:9010}
       MLFLOW_S3_ACCESS_KEY: minioadmin
       MLFLOW_S3_SECRET_KEY: minioadmin
       AWS_ACCESS_KEY_ID: minioadmin
@@ -92,5 +91,36 @@ services:
       keycloak:
         condition: service_started
 
+  # ── MinIO (Optional - 'full' profile) ─────────────────────────────
+  minio:
+    image: minio/minio
+    profiles: ["full"]
+    restart: unless-stopped
+    ports:
+      - "9010:9000"
+      - "9011:9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio-data:/data
+
+  # ── MLflow (Optional - 'full' profile) ────────────────────────────
+  mlflow:
+    image: ghcr.io/mlflow/mlflow
+    profiles: ["full"]
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    environment:
+      AWS_ACCESS_KEY_ID: minioadmin
+      AWS_SECRET_ACCESS_KEY: minioadmin
+      MLFLOW_S3_ENDPOINT_URL: http://minio:9000
+    command: mlflow server --backend-store-uri sqlite:///mlflow.db --default-artifact-root s3://mlflow/ --host 0.0.0.0
+    depends_on:
+      - minio
+
 volumes:
   mysql-data:
+  minio-data:
