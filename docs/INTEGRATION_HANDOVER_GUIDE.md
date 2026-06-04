@@ -99,7 +99,7 @@ Content-Type: application/json;charset=utf-8
 
 Because container provisioning (downloading artifacts, building images) takes time, the returned `AiModel` will initially be in `reserved` or `inProgress` states.
 
-**Note on Webhooks (Hub API):** While the TMForum OpenAPI specification defines a `/hub` endpoint for event subscriptions, Webhook event broadcasting is *currently not implemented* in this iteration of the TMF915 API. Integrating platforms must actively poll the resource.
+Integrating platforms can either poll for the result or subscribe to webhook callbacks (see Section 4 below).
 
 Poll the individual instance:
 
@@ -130,7 +130,119 @@ Content-Type: application/json
 
 ---
 
-## 4. Common Integration Pitfalls & Troubleshooting
+## 4. Event Subscriptions (Webhooks / Hub API)
+
+Instead of polling Step C, integrating platforms can register a callback URL via the TMForum-standard Hub API. The TMF915 server will POST a JSON envelope to that URL whenever an `AiModel` is created, changes state, or is deleted.
+
+**Register a listener:**
+
+```http
+POST /tmf-api/AiM/v4/hub
+Content-Type: application/json
+
+{
+  "callback": "https://<YOUR_PLATFORM>/tmf915-callbacks",
+  "query": "eventType=AiModelStateChangeEvent"
+}
+```
+
+The response is a `201 Created` containing the generated subscription `id`.
+
+**Unregister a listener:**
+
+```http
+DELETE /tmf-api/AiM/v4/hub/<subscription-id>
+```
+
+**Notification envelope** (delivered to your callback):
+
+```json
+{
+  "eventId": "<uuid>",
+  "eventTime": "2026-06-03T12:34:56+00:00",
+  "eventType": "AiModelStateChangeEvent",
+  "event": {
+    "aiModel": { "id": "...", "state": "active", "serviceCharacteristic": [ ... ] }
+  }
+}
+```
+
+Supported `eventType` values: `AiModelCreateEvent`, `AiModelStateChangeEvent`, `AiModelAttributeValueChangeEvent`, `AiModelDeleteEvent`. Delivery is asynchronous and best-effort; failures are logged but do not block the API.
+
+### Filtering with `query`
+
+Use the optional `query` field to avoid receiving events you do not care about. The query is an `&`-separated list of `key=value` predicates; each `value` may be a comma-separated list of accepted values. **All** predicates must match for the event to be delivered. An empty/missing `query` delivers every event.
+
+| Key | Description | Example |
+|---|---|---|
+| `eventType` | TMF event type | `eventType=AiModelStateChangeEvent,AiModelDeleteEvent` |
+| `event.aiModel.id` | Exact AiModel UUID — useful to receive callbacks only for a single deployment | `event.aiModel.id=550e8400-e29b-41d4-a716-446655440000` |
+| `event.aiModel.state` | Filter on resulting service state | `event.aiModel.state=active,inactive` |
+
+Combined example — "notify me only when *this specific model* becomes `active` or is deleted":
+
+```json
+{
+  "callback": "https://my-bss.example.com/tmf915-callbacks",
+  "query": "event.aiModel.id=550e8400-e29b-41d4-a716-446655440000&eventType=AiModelStateChangeEvent,AiModelDeleteEvent"
+}
+```
+
+> Unknown query keys are treated as a non-match (fail-closed), so a typo silences the subscription rather than turning it into a firehose.
+
+### Example: Consumer Implementation (Python Flask)
+
+**Step 1: Register the webhook**
+
+The integrating application registers its callback URL to start receiving events. 
+
+```bash
+curl -X POST "http://<TMF915_HOST>:13082/tmf-api/AiM/v4/hub" \
+     -H "Content-Type: application/json" \
+     -H "Authorization: Bearer <ACCESS_TOKEN>" \
+     -d '{
+       "callback": "http://your-consumer-app:3000/webhooks/tmf915",
+       "query": "eventType=AiModelStateChangeEvent"
+     }'
+```
+
+**Step 2: Implement the receiver**
+
+The consumer application must expose the endpoint to accept the POST payloads. It should acknowledge receipt quickly (best-effort delivery).
+
+```python
+from flask import Flask, request, jsonify
+
+app = Flask(__name__)
+
+@app.route('/webhooks/tmf915', methods=['POST'])
+def handle_tmf_event():
+    notification = request.get_json()
+    
+    event_type = notification.get('eventType')
+    model = notification.get('event', {}).get('aiModel', {})
+    
+    print(f"Received {event_type} for model {model.get('id')}")
+    
+    if event_type == 'AiModelStateChangeEvent' and model.get('state') == 'active':
+        # Find the endpoint characteristic
+        endpoint = next(
+            (c['value'] for c in model.get('serviceCharacteristic', []) if c['name'] == 'endpoint'), 
+            None
+        )
+        print(f"Model is active! Inference URL: {endpoint}")
+        # -> Save the inference endpoint in your database to route traffic
+        
+    # Acknowledge the notification
+    return jsonify({ "status": "acknowledged" }), 200
+
+if __name__ == '__main__':
+    app.run(port=3000)
+```
+
+---
+
+## 5. Common Integration Pitfalls & Troubleshooting
 
 * **Missing JSON Headers:** Ensure `Accept: application/json;charset=utf-8` and `Content-Type: application/json;charset=utf-8` are present. The Spring API might reject requests with `415 Unsupported Media Type` otherwise.
 * **401 Unauthorized:** Your access token may have expired. Refresh your token against Keycloak.

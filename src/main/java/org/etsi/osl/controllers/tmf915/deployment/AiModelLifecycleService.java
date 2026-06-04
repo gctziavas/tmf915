@@ -8,10 +8,12 @@ import org.etsi.osl.controllers.tmf915.model.Characteristic;
 import org.etsi.osl.controllers.tmf915.model.CharacteristicSpecification;
 import org.etsi.osl.controllers.tmf915.model.CharacteristicValueSpecification;
 import org.etsi.osl.controllers.tmf915.model.ServiceStateType;
+import org.etsi.osl.controllers.tmf915.integrations.hub.AiModelDomainEvent;
 import org.etsi.osl.controllers.tmf915.reposervices.AiModelRepositoryService;
 import org.etsi.osl.controllers.tmf915.reposervices.AiModelSpecificationRepositoryService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -61,17 +63,20 @@ public class AiModelLifecycleService {
     private final DeploymentScheduler scheduler;
     private final List<PlatformDeployer> deployers;
     private final TransactionTemplate txTemplate;
+    private final ApplicationEventPublisher eventPublisher;
 
     public AiModelLifecycleService(AiModelRepositoryService repoService,
                                    AiModelSpecificationRepositoryService specificationRepositoryService,
                                    DeploymentScheduler scheduler,
                                    List<PlatformDeployer> deployers,
-                                   PlatformTransactionManager transactionManager) {
+                                   PlatformTransactionManager transactionManager,
+                                   ApplicationEventPublisher eventPublisher) {
         this.repoService = repoService;
         this.specificationRepositoryService = specificationRepositoryService;
         this.scheduler = scheduler;
         this.deployers = deployers;
         this.txTemplate = new TransactionTemplate(transactionManager);
+        this.eventPublisher = eventPublisher;
     }
 
     /**
@@ -103,10 +108,13 @@ public class AiModelLifecycleService {
 
         AiModel created = repoService.createAiModel(aiModelCreate);
         log.info("AiModel {} created in state {}", created.getId(), requestedState);
+        eventPublisher.publishEvent(new AiModelDomainEvent(created, AiModelDomainEvent.EventKind.CREATE));
 
         if (requestedState == ServiceStateType.RESERVED) {
             log.info("AiModel {} is RESERVED – scheduling deployment", created.getId());
-            return scheduler.scheduleDeploy(created);
+            AiModel scheduled = scheduler.scheduleDeploy(created);
+            eventPublisher.publishEvent(new AiModelDomainEvent(scheduled, AiModelDomainEvent.EventKind.STATE_CHANGE));
+            return scheduled;
         }
 
         return created;
@@ -120,14 +128,20 @@ public class AiModelLifecycleService {
         log.info("Updating AiModel {} (requestedState={})", id, requestedState);
 
         if (requestedState == ServiceStateType.RESERVED) {
-            return handleDeploy(id, aiModelUpdate);
+            AiModel deployed = handleDeploy(id, aiModelUpdate);
+            eventPublisher.publishEvent(new AiModelDomainEvent(deployed, AiModelDomainEvent.EventKind.STATE_CHANGE));
+            return deployed;
         }
 
         if (requestedState == ServiceStateType.INACTIVE) {
-            return handleUndeploy(id, aiModelUpdate);
+            AiModel undeployed = handleUndeploy(id, aiModelUpdate);
+            eventPublisher.publishEvent(new AiModelDomainEvent(undeployed, AiModelDomainEvent.EventKind.STATE_CHANGE));
+            return undeployed;
         }
 
-        return repoService.updateAiModel(id, aiModelUpdate);
+        AiModel updated = repoService.updateAiModel(id, aiModelUpdate);
+        eventPublisher.publishEvent(new AiModelDomainEvent(updated, AiModelDomainEvent.EventKind.ATTRIBUTE_VALUE_CHANGE));
+        return updated;
     }
 
     // ── Deploy: RESERVED → schedule build + start container → ACTIVE ────
@@ -189,6 +203,9 @@ public class AiModelLifecycleService {
         
         scheduler.cancelScheduled(id);
         repoService.deleteAiModel(id);
+        if (existing != null) {
+            eventPublisher.publishEvent(new AiModelDomainEvent(existing, AiModelDomainEvent.EventKind.DELETE));
+        }
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────
