@@ -1,0 +1,42 @@
+@startuml
+
+skinparam defaultTextAlignment center
+skinparam componentStyle rectangle
+
+actor "Consumer System\n(Client)" as Client
+participant "TMF 915 API\n(Model Management Block)" as API
+participant "DeploymentScheduler" as Scheduler
+participant "MlflowModelService\n(Container Orchestrator)" as Backend
+database "Model Repository\n(MLflow / S3)" as Repo
+
+== 1. Client to API (TMF 915 Layer) ==
+Client -> API: POST /aiModel\n(target: AiModelSpecification, state: "reserved")
+activate API
+
+== 2. Internal Payload Isolation ==
+API -> API: Parse & Validate\nIsolate TMF 638 Service metadata
+
+== 3. API to Scheduler Integration ==
+API -> Scheduler: Offload deployment task\n(Asynchronous Handoff)
+activate Scheduler
+
+API --> Client: HTTP 201 / 202 Created\n(Immediate response to avoid blocking)
+deactivate API
+
+== 4. Scheduler to Container Orchestrator ==
+Scheduler -> Backend: Instruct infrastructure to deploy
+activate Backend
+
+Backend -> Repo: Resolve Model Artifacts
+activate Repo
+Repo --> Backend: Return exact model hash / binaries
+deactivate Repo
+
+Backend -> Backend: Verify compute constraints\nCheck Docker image boundaries
+Backend -> Backend: Spin up containerized prediction endpoints
+
+Backend --> Scheduler: State change: ACTIVE\n(Attach hostPort, dockerHost, etc.)
+deactivate Backend
+deactivate Scheduler
+
+@enduml

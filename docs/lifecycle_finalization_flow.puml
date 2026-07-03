@@ -1,0 +1,42 @@
+@startuml
+
+skinparam defaultTextAlignment center
+skinparam componentStyle rectangle
+
+participant "Docker Daemon\n(Host Node)" as Docker
+participant "TMF 915\nLifecycle Monitor" as Monitor
+database "TMF 915 API\n(AiModel Entity)" as API
+actor "Admin / Orchestrator" as User
+
+== Start Deployment Monitoring ==
+Monitor -> Docker: Listen to Container Start Event\n(e.g., ai-model-container)
+activate Monitor
+
+alt Successful Startup & Network Binding
+    == ACTIVE Transition ==
+    Docker --> Monitor: Container Running
+    Monitor -> Docker: Scan execution ports (e.g., mapped port 8080)
+    Docker --> Monitor: Socket Bound Successfully
+
+    Monitor -> Monitor: Extract traits:\nhostPort, dockerHost, imageName, payloadExample
+    
+    Monitor -> API: Patch AiModel Entity
+    note right: Attach traits & change state:\nRESERVED -> ACTIVE
+    
+    API --> User: Signal Readiness (Deployment Finalized)
+
+else Infrastructure Anomaly / Crash
+    == DESIGNED Transition (Graceful Downgrade) ==
+    Docker --> Monitor: Process Failure / Timeout\n(e.g., S3 connectivity drop, out-of-memory)
+    
+    Monitor -> Monitor: Intercept Exception Stacktrace
+    
+    Monitor -> API: Patch AiModel Entity
+    note right: Append stacktrace to Entity Notes array\n& change state: RESERVED -> DESIGNED
+    
+    API --> User: Alert Admin natively via attached Notes\n(No orchestrator log scraping required)
+end
+
+deactivate Monitor
+
+@enduml

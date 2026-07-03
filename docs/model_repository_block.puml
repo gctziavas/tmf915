@@ -1,0 +1,48 @@
+@startuml
+
+skinparam defaultTextAlignment center
+skinparam componentStyle rectangle
+
+actor "AutoML Tool \n / AI Developer" as DS
+
+package "Model Generation" {
+  [Training Script\n/ Notebook] as Train
+}
+
+package "Model Repository Architecture (Model Management Block)" {
+
+    package "Backend Storage ecosystem (e.g., MLflow, MinIO)" {
+        [Tracking Server\n(Metrics, Parameters, Tags)] as Tracking
+        database "Artifact Store\n(S3 / MinIO)" as Artifacts
+    }
+
+    package "Vendor-Agnostic Abstraction Layer (TMF 915)" {
+        [TMF 915 API Layer] as TMF915
+        [MlflowSyncService\n(Dual Caching Strategy)] as SyncService
+        database "Model Catalog\n(AiModelSpecification entities)" as Catalog
+        
+        SyncService -down-> Catalog : Translates & Populates\nCatalog Blueprints
+        TMF915 -down-> Catalog : Queries / Reads
+    }
+}
+
+package "Production Environment" {
+    [Deployment Orchestrator\n(Docker Host)] as Deploy
+}
+
+' Data Science relationships
+DS -> Train : Develops\n& Trains
+Train -> Tracking : Logs Execution\n(mlflow.log_metric...)
+Train -> Artifacts : Saves Model Binaries\n(mlflow.log_model)
+
+' Sync execution
+SyncService -up-> Tracking : API Polls Backend\n(Extracts Experiment Metadata)
+SyncService -up-> Artifacts : Validates Presence\n(Active Backoff / S3 HEAD)
+
+' Deployment execution
+Client -> TMF915 : POST /aiModel
+TMF915 --> Deploy : Trigger Instantiation (state: reserved)
+Deploy -> Artifacts : Fetch Hash & Container Binaries
+Deploy -> Deploy : Image Cache\nCheck & Build
+
+@enduml

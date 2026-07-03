@@ -1,0 +1,47 @@
+@startuml
+
+skinparam defaultTextAlignment center
+skinparam componentStyle rectangle
+
+participant "AI Controller\n(AIC)" as AIC
+participant "TMF 915 API\n(MMB Layer)" as MMB
+database "Model Catalog\n(AiModelSpecification)" as Catalog
+participant "Deployment Orchestrator\n(AIC Node / Docker Host)" as Docker
+
+== 1. Discovery and Evaluation ==
+AIC -> MMB: GET /aiModelSpecification\n(Search for specific capability e.g., anomaly-detection)
+activate MMB
+MMB -> Catalog: Query Catalog
+Catalog --> MMB: Return available blueprints & performance metrics
+MMB --> AIC: Return Candidate Models
+deactivate MMB
+
+== 2. Instantiation Trigger ==
+AIC -> AIC: Evaluate metrics & select optimal model
+AIC -> MMB: POST /aiModel\n(target: AiModelSpecification, state: "reserved", targetNode: "AIC-Host")
+activate MMB
+
+== 3. Localized Deployment Execution ==
+note right of MMB
+  MMB delegates the deployment process to the target 
+  compute node. In this scenario, the AIC itself acts 
+  as the Docker host for localized execution.
+end note
+
+MMB -> Docker: Instruct container instantiation\n(Pull image & run on AIC Node)
+activate Docker
+Docker --> Docker: Resolve Artifacts\nCheck Image Cache & Build
+Docker --> Docker: Expose Prediction Endpoint (e.g., port 8080)
+Docker --> MMB: Confirm bindings & running state
+deactivate Docker
+
+== 4. Lifecycle Finalization & Inference Loop ==
+MMB -> MMB: Update entity state to ACTIVE
+MMB --> AIC: Return 2xx Created\n(Includes localized hostPort/ip mappings)
+deactivate MMB
+
+AIC -> AIC: Register active inference endpoint
+AIC -> Docker: Send real-time data for prediction (REST / gRPC)
+Docker --> AIC: Return AI Inference
+
+@enduml

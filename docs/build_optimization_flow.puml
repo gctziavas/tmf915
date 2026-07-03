@@ -1,0 +1,50 @@
+@startuml
+
+skinparam defaultTextAlignment center
+skinparam componentStyle rectangle
+
+participant "TMF 915\nDeploymentScheduler" as Scheduler
+participant "Vendor-Agnostic\nDeployment Adapter" as Adapter
+participant "Pluggable Build Engine\n(e.g., MLflow, Kaniko, S2I)" as Builder
+database "Artifact Store\n(MinIO / S3)" as Repo
+participant "Docker Daemon\n(Host Node)" as Docker
+
+activate Scheduler
+Scheduler -> Adapter: Initiate Instantiation\n(model_name, hash: m-846ff...)
+activate Adapter
+
+== 1. Image Reusability (Caching) ==
+Adapter -> Docker: Check if base Image "m-846ff..." exists
+Docker --> Adapter: Return Image Status
+
+alt Image NOT Found (Cache Miss)
+    == 2. Blueprint Build Process ==
+    Adapter -> Builder: Trigger Custom Image Build
+    activate Builder
+    
+    note over Builder
+        Agnostic interface allows plugging
+        in any container build engine
+    end note
+    
+    Builder -> Repo: Fetch Model Binaries & Configurations
+    Repo --> Builder: Artifacts Downloaded
+    Builder -> Builder: Resolve Software Dependencies\n(e.g., Python, Conda)
+    Builder -> Docker: Package & Register new Image\n(tagged: m-846ff...)
+    deactivate Builder
+else Image Exists (Cache Hit)
+    Adapter -> Adapter: Bypass intensive\ncompilation stage entirely
+end
+
+== 3. Container Identity Resolution ==
+Adapter -> Adapter: Generate trackable container boundary\n(e.g., ai-model-name-846ff...)
+
+== 4. Spin Up Endpoint ==
+Adapter -> Docker: Run Container\n(Image: m-846ff..., ContainerName: generated-name)
+Docker --> Adapter: Container Running\n(Prediction Ports mapped)
+
+Adapter --> Scheduler: Return active deployment traits\n(hostPort, dockerHost, state: ACTIVE)
+deactivate Adapter
+deactivate Scheduler
+
+@enduml
