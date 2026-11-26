@@ -122,15 +122,11 @@ class MlflowDeployerIntegrationTest {
     void deployAndUndeploy_fullLifecycle() throws IOException {
         AiModel model = createReservedAiModel();
 
-        // Deploy
-        mlflowDeployer.deploy(model);
-
-        // Reload from DB (within transaction for lazy loading)
-        AiModel deployed = aiModelRepo.findAiModelById(model.getId());
-        assertNotNull(deployed);
-
-        // Verify state
-        assertEquals(ServiceStateType.ACTIVE, deployed.getState());
+        // Deploy. The deployer only returns what to record; the scheduler writes it and sets
+        // ACTIVE (see DeploymentScheduler.executeDeployment). The in-memory model carries the result.
+        java.util.List<org.etsi.osl.controllers.tmf915.model.Characteristic> recorded = mlflowDeployer.deploy(model);
+        assertTrue(recorded.stream().anyMatch(c -> "endpoint".equals(c.getName())), "deploy should return an endpoint");
+        AiModel deployed = model;
 
         // Verify endpoint
         String endpoint = getCharacteristicValue(deployed, "endpoint");

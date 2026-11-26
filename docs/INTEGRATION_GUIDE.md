@@ -121,7 +121,7 @@ The response returns immediately (`201`, state `reserved`). The API fills in `ml
 
 ### 4.3 Wait for the result
 
-Deployment takes from seconds (the image already exists) to several minutes (the image is built). **Poll for the outcome.** Webhooks do not report it (see [section 5](#5-event-notifications-webhooks)).
+Deployment takes from seconds (the image already exists) to several minutes (the image is built). Either subscribe to [webhooks](#5-event-notifications-webhooks), which report the outcome as an `AiModelStateChangeEvent` (`active` or `designed`), or poll:
 
 ```http
 GET /tmf-api/AiM/v4/aiModel/<MODEL_ID>?fields=state,serviceCharacteristic,note
@@ -215,17 +215,18 @@ Dates are ISO-8601 strings. Unlike API responses, the `aiModel` here also includ
 
 ### Which changes produce an event
 
-Events are only sent for changes made **through the API**:
-
-| API call | Event | `aiModel.state` in the event |
+| Change | Event | `aiModel.state` in the event |
 |---|---|---|
 | `POST /aiModel` | `AiModelCreateEvent` | as created (`reserved`, `designed`, …) |
 | `POST` or `PATCH` with `state: reserved` | `AiModelStateChangeEvent` | `reserved` (deployment scheduled) |
 | `PATCH` with `state: inactive` | `AiModelStateChangeEvent` | `terminated` |
 | `PATCH` with other fields | `AiModelAttributeValueChangeEvent` | unchanged |
 | `DELETE /aiModel/<id>` | `AiModelDeleteEvent` | as before deletion |
+| Deployment finished (background) | `AiModelStateChangeEvent` | `active`, with `endpoint` and `inferencePayloadExample` |
+| Deployment failed (background) | `AiModelStateChangeEvent` | `designed`, with the reason in the last `note` |
+| Teardown at `endDate` (background) | `AiModelStateChangeEvent` | `terminated` |
 
-Changes made by the server in the background send **no event**: a deployment completing (`active`), a deployment failing (`designed`), and the automatic teardown at `endDate` (`terminated`). To learn the outcome of a deployment, poll the model (see [4.3](#43-wait-for-the-result)).
+A deployment that finishes after the model was stopped or deleted is removed again and produces no event; the stop or delete already did. Because delivery is best effort, poll after an outage of your receiver (see [4.3](#43-wait-for-the-result)).
 
 ---
 
@@ -283,25 +284,23 @@ To add one, for example KServe:
 
 1. Create `integrations/kserve/KServeDeployer implements PlatformDeployer`, annotated `@Service` and `@ConditionalOnProperty("kserve.enabled")`.
 2. **`supports`:** return true when the model's `platform` characteristic is your value (`kserve`). Clients select your platform by sending that characteristic.
-3. **`deploy`** runs on a scheduler thread, inside a database transaction, with the model loaded.
+3. **`deploy`** runs on a scheduler thread, **outside any database transaction**, with a detached copy of the model. It may take minutes; no database connection is held meanwhile.
    - Read your inputs from the model's `serviceCharacteristic`, and from its specification's `specCharacteristic` (for example `artifactUri` or `loggedModelId`).
    - Start the deployment and wait until it serves.
-   - Add an `endpoint` characteristic (and any IDs you need to undeploy later) to the model.
-   - Set it active with `AiModelRepositoryService.updateAiModelState(id, ACTIVE)`. Characteristics added to the model are saved when the transaction commits.
-   - **Throw** on failure: the scheduler then sets the model to `designed` and records your exception message in `note`.
+   - **Return** the characteristics to record: an `endpoint`, and any IDs you need to undeploy later. Do not write the model. The scheduler stores them and sets `active` in a short transaction, and publishes the state-change event.
+   - If the model was stopped or deleted while you were deploying, the scheduler calls your `undeploy` with the returned characteristics instead, so nothing is left running.
+   - **Throw** on failure, preferably a `DeploymentException` with a short, client-safe reason. The scheduler sets the model to `designed` and shows only that reason in `note`; the full exception goes to the server log.
 4. **`undeploy`:** release everything using the IDs you stored, after checking that they still belong to this model: characteristics in old rows may have been written by clients. `MlflowDeployer` does this with a container label (`tmf915.aiModelId`). Remove the deployment's characteristics from the model. Do not change the state; the caller sets `terminated`. Make it safe to call twice.
 5. **Specification fields:** if your platform needs extra fields in the specification, add them where specifications are created (see `MlflowSpecificationService`), or create specifications through `POST /aiModelSpecification`.
 
 No change to the controllers, lifecycle service or scheduler is needed. See `MlflowDeployer` for a complete example.
-
-**Keep `deploy` short if you can.** It currently holds a database transaction, and one pooled connection, for its whole duration. Long builds should happen outside the call if the platform allows it.
 
 ---
 
 ## 8. Limitations
 
 - **Implemented resources:** only `aiModel`, `aiModelSpecification` and the event subscription `hub` (`POST /hub`, `DELETE /hub/{id}`). AI contracts, contract specifications and violations, alarms, rules, monitors, topics and events return `501 Not Implemented`. So does the topic-scoped hub, `/topic/{id}/hub`.
-- **Webhooks:** off by default, best effort, no retries and no signing. Background state changes (deployment finished or failed, teardown at `endDate`) send no event (see [section 5](#5-event-notifications-webhooks)).
+- **Webhooks:** off by default, best effort, no retries and no signing (see [section 5](#5-event-notifications-webhooks)).
 - **Model endpoints:** they are plain HTTP and unauthenticated (see [4.3](#43-wait-for-the-result)).
 - **MCP:** unauthenticated by design; restrict it at the network level (see [section 6](#6-mcp-server-for-ai-agents)).
 - **Specification lists:** no total count is returned.

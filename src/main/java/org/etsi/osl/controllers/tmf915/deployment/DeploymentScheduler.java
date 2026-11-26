@@ -18,6 +18,13 @@ import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import org.etsi.osl.controllers.tmf915.integrations.hub.AiModelDomainEvent;
+import org.etsi.osl.controllers.tmf915.model.Characteristic;
+import org.springframework.context.ApplicationEventPublisher;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -56,15 +63,18 @@ public class DeploymentScheduler {
     private final AiModelRepositoryService repoService;
     private final org.etsi.osl.controllers.tmf915.reposervices.AiModelSpecificationRepositoryService specRepoService;
     private final TransactionTemplate txTemplate;
+    private final ApplicationEventPublisher eventPublisher;
 
     public DeploymentScheduler(List<PlatformDeployer> deployers,
                                AiModelRepositoryService repoService,
                                org.etsi.osl.controllers.tmf915.reposervices.AiModelSpecificationRepositoryService specRepoService,
-                               PlatformTransactionManager txManager) {
+                               PlatformTransactionManager txManager,
+                               ApplicationEventPublisher eventPublisher) {
         this.deployers = deployers;
         this.repoService = repoService;
         this.specRepoService = specRepoService;
         this.txTemplate = new TransactionTemplate(txManager);
+        this.eventPublisher = eventPublisher;
     }
 
     // ── Startup recovery ────────────────────────────────────────────────
@@ -136,13 +146,14 @@ public class DeploymentScheduler {
             // Deploy now in background to prevent HTTP blocking
             log.info("Scheduling immediate background deployment for AiModel {} (startDate={})", id, startDate);
             cancelExisting(deployTasks, id);
-            ScheduledFuture<?> deployFuture = executor.schedule(() -> {
-                deployTasks.remove(id);
-                executeDeployment(id);
-                if (endDate != null) {
-                    scheduleUndeploy(id, endDate);
-                }
-            }, 0, TimeUnit.MILLISECONDS);
+            ScheduledFuture<?> deployFuture = executor.schedule(
+                    () -> runSafely("deployment", id, () -> {
+                        deployTasks.remove(id);
+                        executeDeployment(id);
+                        if (endDate != null) {
+                            scheduleUndeploy(id, endDate);
+                        }
+                    }), 0, TimeUnit.MILLISECONDS);
             deployTasks.put(id, deployFuture);
             return aiModel;
         }
@@ -153,13 +164,13 @@ public class DeploymentScheduler {
 
         cancelExisting(deployTasks, id);
         ScheduledFuture<?> deployFuture = executor.schedule(
-                () -> {
+                () -> runSafely("deployment", id, () -> {
                     deployTasks.remove(id);
                     executeDeployment(id);
                     if (endDate != null) {
                         scheduleUndeploy(id, endDate);
                     }
-                },
+                }),
                 deployDelay, TimeUnit.MILLISECONDS);
 
         deployTasks.put(id, deployFuture);
@@ -182,53 +193,134 @@ public class DeploymentScheduler {
 
     // ── Internal ────────────────────────────────────────────────────────
 
-    private AiModel executeDeployment(String aiModelId) {
-        return txTemplate.execute(status -> {
-            AiModel aiModel = repoService.findAiModelById(aiModelId);
-            if (aiModel == null) {
-                log.warn("AiModel {} no longer exists – skipping deployment", aiModelId);
-                return null;
-            }
+    /**
+     * Runs a scheduled task and logs anything it throws. Without this, an exception escaping a
+     * task is stored in its {@link ScheduledFuture}, which nobody reads, and disappears.
+     */
+    private void runSafely(String what, String aiModelId, Runnable task) {
+        try {
+            task.run();
+        } catch (Throwable t) {
+            log.error("Scheduled {} of AiModel {} failed unexpectedly", what, aiModelId, t);
+        }
+    }
 
-            PlatformDeployer deployer = findDeployer(aiModel);
-            if (deployer == null) {
-                log.warn("No deployer supports AiModel {} – skipping deployment", aiModelId);
-                return aiModel;
-            }
+    /**
+     * Deploys a RESERVED model in three steps (handoff 5.6, 5.5, 4.1):
+     * <ol>
+     *   <li>read the model (its own short read-only transaction);</li>
+     *   <li>deploy, <b>outside any transaction</b>: building an image can take minutes, and must
+     *       not hold a database connection meanwhile;</li>
+     *   <li>record the result in a short transaction, only if the model is still RESERVED. If it
+     *       was stopped or deleted during step 2, the new deployment is undeployed instead.</li>
+     * </ol>
+     * State changes are published as {@code AiModelStateChangeEvent} after their transaction commits.
+     */
+    void executeDeployment(String aiModelId) {
+        AiModel aiModel = repoService.findAiModelById(aiModelId);
+        if (aiModel == null) {
+            log.warn("AiModel {} no longer exists – skipping deployment", aiModelId);
+            return;
+        }
+        if (aiModel.getState() != ServiceStateType.RESERVED) {
+            log.info("AiModel {} is {} rather than RESERVED – skipping deployment", aiModelId, aiModel.getState());
+            return;
+        }
+        PlatformDeployer deployer = findDeployer(aiModel);
+        if (deployer == null) {
+            log.warn("No deployer supports AiModel {} – skipping deployment", aiModelId);
+            return;
+        }
 
-            try {
-                deployer.deploy(aiModel);
-                updateModelFileExistsCharacteristic(aiModel, true);
-                return repoService.findAiModelById(aiModelId);
-            } catch (Exception e) {
-                // The note is readable by every API user; it gets a short reason and a reference.
-                // The full error (it can hold internal URLs and command output) is logged only.
-                String reference = UUID.randomUUID().toString().substring(0, 8);
-                log.error("Scheduled deployment failed for AiModel {} (reference {}): {}",
-                        aiModelId, reference, e.getMessage(), e);
-                
-                updateModelFileExistsCharacteristic(aiModel, false);
-                
-                org.etsi.osl.controllers.tmf915.model.AiModelUpdate update = new org.etsi.osl.controllers.tmf915.model.AiModelUpdate();
-                update.setState(ServiceStateType.DESIGNED);
-                
-                // Keep existing notes if any
-                if (aiModel.getNote() != null) {
-                    update.setNote(new java.util.ArrayList<>(aiModel.getNote()));
-                }
-                
-                org.etsi.osl.controllers.tmf915.model.Note errorNote = new org.etsi.osl.controllers.tmf915.model.Note();
-                
-                errorNote.setText(publicReason(e) + " (reference " + reference + "; details are in the server log)");
-                
-                errorNote.setDate(OffsetDateTime.now());
-                errorNote.setAuthor("TMF915_DeploymentScheduler");
-                update.addNoteItem(errorNote);
-                
-                repoService.updateAiModel(aiModelId, update);
-                return aiModel;
-            }
+        List<Characteristic> recorded;
+        try {
+            recorded = deployer.deploy(aiModel);
+        } catch (Exception e) {
+            updateModelFileExistsCharacteristic(aiModel, false);
+            recordFailure(aiModelId, e);
+            return;
+        }
+        updateModelFileExistsCharacteristic(aiModel, true);
+
+        List<Characteristic> result = recorded != null ? recorded : List.of();
+        AiModel active = repoService.updateIfInState(aiModelId, ServiceStateType.RESERVED, model -> {
+            setCharacteristics(model, result);
+            model.setState(ServiceStateType.ACTIVE);
         });
+        if (active == null) {
+            // Stopped (PATCH inactive) or deleted while the image was building: nothing records
+            // this deployment, so remove it rather than leave a container running on its port.
+            log.info("AiModel {} was stopped or deleted during deployment – removing the new deployment", aiModelId);
+            setCharacteristics(aiModel, result);
+            try {
+                deployer.undeploy(aiModel);
+            } catch (Exception e) {
+                log.error("Could not remove the deployment of AiModel {} made after it was stopped", aiModelId, e);
+            }
+            return;
+        }
+        log.info("AiModel {} is ACTIVE", aiModelId);
+        eventPublisher.publishEvent(new AiModelDomainEvent(active, AiModelDomainEvent.EventKind.STATE_CHANGE));
+    }
+
+    /** Sets the model to DESIGNED with a short note, if it is still RESERVED. */
+    private void recordFailure(String aiModelId, Exception e) {
+        // The note is readable by every API user; it gets a short reason and a reference.
+        // The full error (it can hold internal URLs and command output) is logged only.
+        String reference = UUID.randomUUID().toString().substring(0, 8);
+        log.error("Scheduled deployment failed for AiModel {} (reference {}): {}",
+                aiModelId, reference, e.getMessage(), e);
+
+        org.etsi.osl.controllers.tmf915.model.Note errorNote = new org.etsi.osl.controllers.tmf915.model.Note();
+        errorNote.setText(publicReason(e) + " (reference " + reference + "; details are in the server log)");
+        errorNote.setDate(OffsetDateTime.now());
+        errorNote.setAuthor("TMF915_DeploymentScheduler");
+
+        AiModel designed = repoService.updateIfInState(aiModelId, ServiceStateType.RESERVED, model -> {
+            List<org.etsi.osl.controllers.tmf915.model.Note> notes =
+                    new ArrayList<>(model.getNote() != null ? model.getNote() : List.of());
+            notes.add(errorNote);
+            model.setNote(notes);
+            model.setState(ServiceStateType.DESIGNED);
+        });
+        if (designed != null) {
+            eventPublisher.publishEvent(new AiModelDomainEvent(designed, AiModelDomainEvent.EventKind.STATE_CHANGE));
+        } else {
+            log.info("AiModel {} was stopped or deleted during the failed deployment – state left as is", aiModelId);
+        }
+    }
+
+    /**
+     * Sets each characteristic on the model, replacing an existing one with the same name (its
+     * value is updated in place) and dropping further duplicates. The given objects are copied,
+     * never attached, so detached entities do not end up in a managed collection.
+     */
+    static void setCharacteristics(AiModel model, List<Characteristic> values) {
+        if (model.getServiceCharacteristic() == null) {
+            model.setServiceCharacteristic(new ArrayList<>());
+        }
+        List<Characteristic> current = model.getServiceCharacteristic();
+        for (Characteristic value : values) {
+            Characteristic existing = null;
+            Iterator<Characteristic> it = current.iterator();
+            while (it.hasNext()) {
+                Characteristic c = it.next();
+                if (c != null && value.getName().equals(c.getName())) {
+                    if (existing == null) {
+                        existing = c;
+                    } else {
+                        it.remove();
+                    }
+                }
+            }
+            if (existing == null) {
+                existing = new Characteristic();
+                existing.setName(value.getName());
+                current.add(existing);
+            }
+            existing.setValue(value.getValue());
+            existing.setValueType(value.getValueType());
+        }
     }
 
     private void scheduleUndeploy(String aiModelId, OffsetDateTime endDate) {
@@ -242,37 +334,69 @@ public class DeploymentScheduler {
         log.info("Scheduling undeployment of AiModel {} in {}ms (endDate={})", aiModelId, delay, endDate);
         cancelExisting(undeployTasks, aiModelId);
         ScheduledFuture<?> future = executor.schedule(
-                () -> {
+                () -> runSafely("undeployment", aiModelId, () -> {
                     undeployTasks.remove(aiModelId);
                     executeUndeploy(aiModelId);
-                },
+                }),
                 delay, TimeUnit.MILLISECONDS);
 
         undeployTasks.put(aiModelId, future);
     }
 
-    private void executeUndeploy(String aiModelId) {
-        txTemplate.executeWithoutResult(status -> {
-            AiModel aiModel = repoService.findAiModelById(aiModelId);
-            if (aiModel == null) {
-                log.warn("AiModel {} no longer exists – skipping undeployment", aiModelId);
-                return;
-            }
-            if (aiModel.getState() != ServiceStateType.ACTIVE) {
-                log.info("AiModel {} is not ACTIVE (state={}) – skipping undeployment", aiModelId, aiModel.getState());
-                return;
-            }
+    /**
+     * Tears down an ACTIVE model at its {@code endDate}, in the same three steps as
+     * {@link #executeDeployment}: read, undeploy outside a transaction, then record TERMINATED
+     * and remove the characteristics the deployer removed, only if the model is still ACTIVE.
+     */
+    void executeUndeploy(String aiModelId) {
+        AiModel aiModel = repoService.findAiModelById(aiModelId);
+        if (aiModel == null) {
+            log.warn("AiModel {} no longer exists – skipping undeployment", aiModelId);
+            return;
+        }
+        if (aiModel.getState() != ServiceStateType.ACTIVE) {
+            log.info("AiModel {} is not ACTIVE (state={}) – skipping undeployment", aiModelId, aiModel.getState());
+            return;
+        }
 
-            PlatformDeployer deployer = findDeployer(aiModel);
-            if (deployer != null) {
+        Set<String> before = characteristicNames(aiModel);
+        PlatformDeployer deployer = findDeployer(aiModel);
+        if (deployer != null) {
+            try {
                 deployer.undeploy(aiModel);
-            } else {
-                log.warn("No deployer supports AiModel {} – cannot undeploy cleanly", aiModelId);
+            } catch (Exception e) {
+                // The container may still be running: keep the model ACTIVE rather than claim otherwise.
+                log.error("Undeployment of AiModel {} at its endDate failed; it stays ACTIVE", aiModelId, e);
+                return;
             }
+        } else {
+            log.warn("No deployer supports AiModel {} – cannot undeploy cleanly", aiModelId);
+        }
+        Set<String> removed = new HashSet<>(before);
+        removed.removeAll(characteristicNames(aiModel));
 
-            repoService.updateAiModelState(aiModelId, ServiceStateType.TERMINATED);
-            log.info("AiModel {} undeployed and set to TERMINATED (endDate reached)", aiModelId);
+        AiModel terminated = repoService.updateIfInState(aiModelId, ServiceStateType.ACTIVE, model -> {
+            if (model.getServiceCharacteristic() != null) {
+                model.getServiceCharacteristic().removeIf(c -> c != null && removed.contains(c.getName()));
+            }
+            model.setState(ServiceStateType.TERMINATED);
         });
+        if (terminated != null) {
+            log.info("AiModel {} undeployed and set to TERMINATED (endDate reached)", aiModelId);
+            eventPublisher.publishEvent(new AiModelDomainEvent(terminated, AiModelDomainEvent.EventKind.STATE_CHANGE));
+        }
+    }
+
+    private static Set<String> characteristicNames(AiModel model) {
+        Set<String> names = new HashSet<>();
+        if (model.getServiceCharacteristic() != null) {
+            for (Characteristic c : model.getServiceCharacteristic()) {
+                if (c != null && c.getName() != null) {
+                    names.add(c.getName());
+                }
+            }
+        }
+        return names;
     }
 
     /** The client-safe part of a deployment failure; see {@link DeploymentException}. */

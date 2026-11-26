@@ -90,10 +90,16 @@ public class MlflowDeployer implements PlatformDeployer {
         return "mlflow".equals(getCharacteristicValue(model, "platform"));
     }
 
+    /**
+     * Builds and starts the container, and returns what to record on the model: the
+     * {@link MlflowModelService#DEPLOYMENT_CHARACTERISTICS} that the deployment set on the
+     * in-memory {@code model}. Nothing is written to the database here.
+     */
     @Override
-    public void deploy(AiModel model) throws IOException {
+    public List<Characteristic> deploy(AiModel model) throws IOException {
         try {
             deployUnclassified(model);
+            return recordedCharacteristics(model);
         } catch (DeploymentException e) {
             throw e;
         } catch (IOException | RuntimeException e) {
@@ -105,6 +111,20 @@ public class MlflowDeployer implements PlatformDeployer {
      * A short, client-safe description of a deployment failure (handoff 5.12). The model's notes
      * show only this; the full message (build output, S3 URLs, paths) is logged by the scheduler.
      */
+    private static List<Characteristic> recordedCharacteristics(AiModel model) {
+        List<Characteristic> recorded = new java.util.ArrayList<>();
+        for (Characteristic c : model.getServiceCharacteristic()) {
+            if (c != null && MlflowModelService.DEPLOYMENT_CHARACTERISTICS.contains(c.getName())) {
+                Characteristic copy = new Characteristic();
+                copy.setName(c.getName());
+                copy.setValue(c.getValue());
+                copy.setValueType(c.getValueType());
+                recorded.add(copy);
+            }
+        }
+        return recorded;
+    }
+
     static String publicReason(Throwable e) {
         String msg = e.getMessage() == null ? "" : e.getMessage().toLowerCase(java.util.Locale.ROOT);
         if (msg.contains("allowed-hosts")) {

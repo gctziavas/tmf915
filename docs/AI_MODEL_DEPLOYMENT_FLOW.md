@@ -42,7 +42,13 @@ To achieve horizontal model scales (spawning identical containers rapidly) witho
 
 Depending heavily on network stability and the Docker Daemon socket capabilities (`tcp://host:2375` or `/var/run/docker.sock`), failures do occur.
 
-* **ACTIVE Transitions:**
-  Upon successful network socket binding on standard interface port scans (`0.0.0.0:3000 -> 8080`), traits tracking specific topological attributes, including `hostPort`, `dockerHost`, `imageName` and an executable `inferencePayloadExample`, are patched directly into the `AiModel` instance entity dynamically. TMF915 commits `ACTIVE` states simultaneously.
-* **DESIGNED Transitions:**
-  Upon failing to resolve dependencies (e.g. MinIO connectivity drop to Docker container `build-docker`), the service downgrades the operational entity from `RESERVED` directly cleanly into `DESIGNED`. The exception Java stacktrace executes an unparsed drop directly to the `AiModel.Note` array alerting users natively.
+`DeploymentScheduler.executeDeployment` works in three steps, so that a build lasting minutes never holds a database connection:
+
+1. **Read** the model in a short read-only transaction.
+2. **Deploy**, outside any transaction. `MlflowDeployer.deploy` builds the image (if needed), starts the container, and returns the characteristics to record: `endpoint`, `containerId`, `hostPort`, `imageName`, `dockerHost`, `deployedAt`, `inferencePayloadExample`.
+3. **Record** the outcome in a short transaction (`AiModelRepositoryService.updateIfInState`), only if the model is still `RESERVED`:
+   * **ACTIVE:** the characteristics replace any with the same name, and the state becomes `ACTIVE`.
+   * **DESIGNED:** on failure, the state becomes `DESIGNED` and a note gets a short reason and a reference id. The full exception is in the server log under that reference.
+   * **Stopped or deleted meanwhile:** nothing is recorded; the container just started is undeployed instead.
+
+After each recorded change, an `AiModelStateChangeEvent` is published (webhooks, if enabled). Teardown at `endDate` (`executeUndeploy`) follows the same pattern and records `TERMINATED`.

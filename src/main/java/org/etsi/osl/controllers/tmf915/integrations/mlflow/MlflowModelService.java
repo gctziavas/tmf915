@@ -483,10 +483,13 @@ public class MlflowModelService {
         
         addCharacteristicToModelObj(aiModel, "inferencePayloadExample", examplePayload, "object");
 
-        aiModel.setState(ServiceStateType.ACTIVE);
-        aiModelRepository.updateAiModelState(aiModel.getId(), ServiceStateType.ACTIVE);
-        log.info("AiModel {} activated – endpoint {}", aiModel.getId(), deploy.getInvocationsUrl());
+        // In memory only: the scheduler records these and sets ACTIVE in its own transaction.
+        log.info("AiModel {} deployed – endpoint {}", aiModel.getId(), deploy.getInvocationsUrl());
     }
+
+    /** Characteristics a deployment sets on the model (see {@link #updateModelAfterDeploy}). */
+    public static final List<String> DEPLOYMENT_CHARACTERISTICS = List.of(
+            "endpoint", "deployedAt", "dockerHost", "containerId", "hostPort", "imageName", "inferencePayloadExample");
 
     private void addCharacteristicToModel(AiModel model, String name, String value, String valueType) {
         addCharacteristicToModelObj(model, name, value, valueType);

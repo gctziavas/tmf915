@@ -19,6 +19,7 @@ import java.net.URI;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.function.Consumer;
 
 /**
  * Write methods run in a transaction by default; finders are read-only. Lazy associations that
@@ -127,6 +128,24 @@ public class AiModelRepositoryService {
         aiModel.setState(state);
         normalize(aiModel);
         return normalize(aiModelRepository.save(aiModel));
+    }
+
+    /**
+     * Applies {@code change} to the model in one short transaction, but only if the model still
+     * exists and is in {@code expectedState}. Used by background work, so that a result computed
+     * outside a transaction (for example a finished deployment) is not written over a model that
+     * a client stopped or deleted in the meantime.
+     *
+     * @return the updated model, or null if it no longer exists or is in another state
+     */
+    public AiModel updateIfInState(String id, ServiceStateType expectedState, Consumer<AiModel> change) {
+        AiModel model = aiModelRepository.findById(id).orElse(null);
+        if (model == null || model.getState() != expectedState) {
+            return null;
+        }
+        change.accept(model);
+        normalize(model);
+        return normalize(aiModelRepository.save(model));
     }
 
     @Transactional(readOnly = true)

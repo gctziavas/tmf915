@@ -22,16 +22,26 @@ public interface PlatformDeployer {
     boolean supports(AiModel model);
 
     /**
-     * Builds/pushes images and starts a container (or equivalent) for the model.
-     * Implementations are expected to update the model's state to ACTIVE and
-     * persist relevant characteristics (endpoint, containerId, …).
+     * Starts serving the model and returns the characteristics to record on it: at least an
+     * {@code endpoint}, plus whatever {@link #undeploy} needs later (container ids and so on).
+     *
+     * <p>Runs on a scheduler thread <b>outside any database transaction</b>, and may take
+     * minutes. It must not write the model: the scheduler records the returned characteristics
+     * and sets the state to {@code active} in a short transaction afterwards. If the model was
+     * stopped or deleted while this ran, the scheduler calls {@link #undeploy} on a copy carrying
+     * the returned characteristics instead.
+     *
+     * @return characteristics to set on the model, replacing existing ones with the same name
+     * @throws IOException on failure, preferably a {@link DeploymentException} with a
+     *                     client-safe reason; the scheduler then sets the model to {@code designed}
      */
-    void deploy(AiModel model) throws IOException;
+    List<Characteristic> deploy(AiModel model) throws IOException;
 
     /**
-     * Stops and cleans up the running deployment for the model
-     * (stop container, remove image, etc.).
-     * Does <em>not</em> change the model's persisted state — the caller handles that.
+     * Stops and cleans up the running deployment for the model (stop container, remove image,
+     * etc.), and removes the characteristics that described it from
+     * {@code model.getServiceCharacteristic()}. Does <em>not</em> write the model: the caller
+     * persists the state change and the removed characteristics.
      */
     void undeploy(AiModel model);
 

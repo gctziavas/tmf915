@@ -51,8 +51,9 @@ Not verified: the running application was never called. That the HTTP layer uses
 - **Part 5: in progress**, following [`BUG_FIX_PLAN.md`](BUG_FIX_PLAN.md).
   - **PR 1:** committed (`14aef6b`): 5.1 steps 1 and 4, 5.13 step 1.
   - **PR 2:** committed (`4b83a01`): 5.1 steps 2 and 3, 5.2, 5.3, 5.4, 5.10, 5.13 step 2. See "PR 2 outcome" at the end of Part 5.
-  - **PR 3:** done, uncommitted: 4.3 (per D2), 5.7, 5.12, 5.11 (part). See "PR 3 outcome" at the end of Part 5.
-  - **Open:** 5.5, 5.6, 5.8, 5.9, the rest of 5.11.
+  - **PR 3:** committed (`66aa1de`): 4.3 (per D2), 5.7, 5.12, 5.11 (part). See "PR 3 outcome" at the end of Part 5.
+  - **PR 4:** done, uncommitted: 5.6, 5.5, 4.1. See "PR 4 outcome" at the end of Part 5.
+  - **Open:** 5.8, 5.9, the rest of 5.11 (and Part 4 items 4.2, 4.4 to 4.7).
 
 ## Part 1: fix the AiModel list (requested)
 
@@ -171,7 +172,7 @@ Ordered by expected benefit. Each is independent.
 Notes for whoever continues:
 
 - A `getId()` on a detached Hibernate proxy returns the id without loading it. This was checked with a throwaway test. `AiModelLifecycleService.enrichCharacteristicsFromSpecification` relies on it.
-- Deployment code (`DeploymentScheduler.executeDeployment`, `executeUndeploy`, `AiModelLifecycleService.handleUndeploy`) runs inside its own `TransactionTemplate`, so it never depended on open-in-view. That template wraps the whole Docker build and deploy, which takes up to 10 minutes. For that whole time it holds one database transaction and one pooled connection. This is a performance problem in its own right: a few deployments at once can drain the Hikari pool (max 20). The fix is to load the model in a short transaction, deploy outside any transaction, then write the result in a second short transaction. It was not done, because it changes deployment failure handling and needs Docker and MLflow to test.
+- Deployment code (`DeploymentScheduler.executeDeployment`, `executeUndeploy`, `AiModelLifecycleService.handleUndeploy`) runs inside its own `TransactionTemplate`, so it never depended on open-in-view. That template wraps the whole Docker build and deploy, which takes up to 10 minutes. For that whole time it holds one database transaction and one pooled connection. This is a performance problem in its own right: a few deployments at once can drain the Hikari pool (max 20). The fix is to load the model in a short transaction, deploy outside any transaction, then write the result in a second short transaction. It was not done, because it changes deployment failure handling and needs Docker and MLflow to test. **Resolved in PR 4** (Part 5, 5.6): the build now runs outside any transaction.
 - **springdoc 2.6.0 does not support Spring Framework 7 fully.** Its `GenericResponseService` calls `new ControllerAdviceBean(Object)`, which Spring 7 removed. As soon as any `@ControllerAdvice` bean exists, `/v3/api-docs` and Swagger UI fail with `NoSuchMethodError`. Today there are none, which is why `FieldsResponseBodyAdvice` is registered without the annotation. Upgrading springdoc to a Spring Boot 4 compatible release (the 3.x line) removes the constraint; `FieldsResponseBodyAdviceConfiguration` can then be replaced by `@ControllerAdvice`. `ResponseCompressionTest` fails if `/v3/api-docs` breaks.
 - `mvn test`: 205 tests, all passing.
 
@@ -591,6 +592,27 @@ Not checked: a real MLflow build, and the plan's manual check (two models with t
 - `README.md` access bullet.
 
 `mvn clean test`: 288 tests, all passing.
+
+### PR 4 outcome (5.6, 5.5, 4.1)
+
+**Contract change.** `PlatformDeployer.deploy` now **returns** the characteristics to record (`List<Characteristic>`) and must not write the model. It runs outside any transaction. `MlflowModelService.updateModelAfterDeploy` no longer calls `updateAiModelState(ACTIVE)`; it sets the characteristics on the in-memory model only. `MlflowDeployer.deploy` returns copies of `MlflowModelService.DEPLOYMENT_CHARACTERISTICS`. `undeploy` still removes the deployment's characteristics from the object it is given; the caller persists that.
+
+| Item | Change | Verified by |
+|---|---|---|
+| 5.6 | `DeploymentScheduler.executeDeployment` and `executeUndeploy` no longer use a `TransactionTemplate`:<br>1. `findAiModelById` (its own read-only transaction);<br>2. deploy or undeploy with no transaction open;<br>3. `AiModelRepositoryService.updateIfInState(id, expectedState, change)` (new): one short transaction that applies the change only if the model still exists and is in the expected state.<br>Every scheduled task body runs in `runSafely`, which logs any `Throwable` with the model id. A failed undeploy at `endDate` keeps the model `ACTIVE` (the container may still run) instead of the task dying silently. This also removes the Part 2 note's problem: a build no longer holds a Hikari connection for up to 10 minutes. | `DeploymentSchedulerSpringTest` (real context and H2, fake deployer): no transaction is active during `deploy`; the result is stored. `DeploymentSchedulerTest`: an exception in the write step is logged, and the executor still runs the next task. |
+| 5.5 | If `updateIfInState(…, RESERVED, …)` finds the model deleted or no longer `RESERVED`, the scheduler applies the returned characteristics to the detached copy and calls `deployer.undeploy` on it, so the container started after the stop is removed. A failure while the model was stopped meanwhile leaves its state alone. | `DeploymentSchedulerSpringTest`: the client PATCHes `inactive` through `AiModelLifecycleService` during the build; the model stays `TERMINATED` without `endpoint`, and the new container is undeployed. `DeploymentSchedulerTest`: the same for a deleted model; a failed build after a stop keeps `TERMINATED`. |
+| 4.1 | After each committed state change, the scheduler publishes `AiModelDomainEvent(STATE_CHANGE)`: `ACTIVE` (deployment finished), `DESIGNED` (deployment failed), `TERMINATED` (teardown at `endDate`). Nothing is published when nothing was recorded (5.5 cases). `DeploymentScheduler` takes an `ApplicationEventPublisher`. | `DeploymentSchedulerSpringTest` (`@RecordApplicationEvents`): `ACTIVE` and `TERMINATED` events from background work. `DeploymentSchedulerTest`: one event per outcome, with the right state. |
+
+**Other changes.**
+
+- **Recorded characteristics** are merged by name in the write transaction (`DeploymentScheduler.setCharacteristics`): an existing managed entity's value is updated in place, and duplicates are dropped. The returned objects are copied, never attached.
+- **Undeploy at `endDate`** removes the characteristics the deployer removed (`before − after` names), so client changes made meanwhile are kept.
+
+**Not changed.** `AiModelLifecycleService.handleUndeploy` (PATCH `inactive`) still runs `deployer.undeploy` inside a `TransactionTemplate`. That is short (Docker stop and remove, no build), but it still holds a connection meanwhile; restructure it the same way if needed.
+
+**Client-visible:** webhook subscribers receive `active`, `designed` and `terminated` events from background work. `INTEGRATION_GUIDE.md` sections 4.3, 5, 7 and 8 and `AI_MODEL_DEPLOYMENT_FLOW.md` section 4 are updated. `MlflowDeployerIntegrationTest` was adapted to the new contract; it was compiled but not run (it needs MLflow and Docker).
+
+`mvn clean test`: 298 tests, all passing.
 
 ## Related bugs, not performance
 

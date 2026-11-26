@@ -44,7 +44,7 @@ Client-visible: container names change (`<name>-<id8>` instead of `<name>-v<vers
 
 Manual check after merge, needs Docker and MLflow: deploy two models with the same name; both stay up; undeploy one; the other still answers.
 
-### PR 3: remaining exposure (4.3 per D2, 5.7, 5.12, 5.11 part) — done, uncommitted
+### PR 3: remaining exposure (4.3 per D2, 5.7, 5.12, 5.11 part) — done, committed (`66aa1de`)
 
 Outcome: see "PR 3 outcome" in the handoff, Part 5. `mvn clean test`: 288 tests, all passing.
 
@@ -55,7 +55,9 @@ Outcome: see "PR 3 outcome" in the handoff, Part 5. `mvn clean test`: 288 tests,
 
 ## Milestone B: deployments are reliable
 
-### PR 4: split the deployment transaction (5.6, 5.5, 4.1)
+### PR 4: split the deployment transaction (5.6, 5.5, 4.1) — done, uncommitted
+
+Outcome: see "PR 4 outcome" in the handoff, Part 5. `mvn clean test`: 298 tests, all passing.
 
 These three change the same two methods, `DeploymentScheduler.executeDeployment` and `executeUndeploy`.
 
