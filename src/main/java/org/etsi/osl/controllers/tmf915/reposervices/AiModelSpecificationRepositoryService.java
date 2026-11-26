@@ -113,9 +113,8 @@ public class AiModelSpecificationRepositoryService {
 
     /**
      * The download attachment is server-owned: a PATCH can neither remove nor replace it (it
-     * goes only when the specification opts out with {@code downloadable=false}). A PATCH also
-     * replaces the attachment list whenever it is sent, and the generated model sends an empty
-     * list when the client leaves {@code attachment} out.
+     * goes only when the specification opts out with {@code downloadable=false}). A PATCH that
+     * sends {@code attachment} replaces the client's attachments, but this one is put back.
      */
     private static void keepDownloadAttachment(AiModelSpecification spec, Optional<AttachmentRefOrValue> stored) {
         List<AttachmentRefOrValue> attachments = new ArrayList<>(spec.getAttachment() == null ? List.of() : spec.getAttachment());

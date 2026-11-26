@@ -246,13 +246,21 @@ class AiModelSpecificationRepositoryServiceUnitTest {
         when(aiModelSpecificationRepository.findById("spec-1")).thenReturn(Optional.of(stored));
         when(aiModelSpecificationRepository.save(any(AiModelSpecification.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        // No attachment in the PATCH: the generated model sends an empty list.
+        // No attachment in the PATCH: both attachments stay.
         AiModelSpecificationUpdate update = new AiModelSpecificationUpdate();
         update.setDescription("new");
         AiModelSpecification patched = service.updateAiModelSpecification("spec-1", update);
+        assertEquals(2, patched.getAttachment().size());
+        assertEquals("datasheet.pdf", patched.getAttachment().get(0).getName());
+        assertEquals(10f, org.etsi.osl.controllers.tmf915.artifacts.DownloadAttachments
+                .find(patched.getAttachment()).orElseThrow().getSize().getAmount());
+
+        // The client replaces the list without the download attachment: it is put back.
+        AiModelSpecificationUpdate withoutDownload = new AiModelSpecificationUpdate();
+        withoutDownload.setAttachment(new java.util.ArrayList<>());
+        patched = service.updateAiModelSpecification("spec-1", withoutDownload);
         assertEquals(1, patched.getAttachment().size());
         assertEquals(org.etsi.osl.controllers.tmf915.artifacts.DownloadAttachments.TYPE, patched.getAttachment().get(0).getAtType());
-        assertEquals(10f, patched.getAttachment().get(0).getSize().getAmount());
 
         // A client's own download attachment (e.g. a bigger size) is ignored.
         org.etsi.osl.controllers.tmf915.model.AttachmentRefOrValue forged = download();

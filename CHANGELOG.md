@@ -10,6 +10,10 @@ Client-visible changes. Releases are not tagged yet; everything below is on `mai
 - New fields on specifications synced from MLflow: the characteristics `platform` (`mlflow`) and `artifactFormat` (`mlflow-model`), and, for downloadable models, an `attachment` of `@type` `ModelArtifactAttachment` with the download `href`, format, `mimeType` and `size`. Existing specifications get the attachment after the next start.
 - Publishers can opt a model out of downloads with the MLflow tag `downloadable=false`, or by setting the characteristic `downloadable` to `false` on the specification.
 
+### Fixed
+
+- **`PATCH` erased lists the client did not send**, on both `aiModel` and `aiModelSpecification`. A PATCH of, say, `description` or `state` emptied `note` (including deployment failure reasons), `software`, `relatedParty`, `attachment`, `constraint` and every other list attribute that was left out. Now an omitted list is kept, a sent list replaces the stored one, and `[]` clears it. `serviceCharacteristic` and `specCharacteristic` still merge by `name`. Data already erased by earlier PATCHes cannot be restored by this fix.
+
 ### Changed
 
 - `INTEGRATION_GUIDE.md`: sections 5 to 8 are now 6 to 9 (new section 5, "Using a model as a library").

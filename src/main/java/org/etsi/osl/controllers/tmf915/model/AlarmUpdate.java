@@ -67,27 +67,27 @@ public class AlarmUpdate {
   private @Nullable String state;
 
   @Valid
-  private List<@Valid AffectedService> affectedService = new ArrayList<>();
+  private List<@Valid AffectedService> affectedService;
 
   private @Nullable AlarmType alarmType;
 
   private @Nullable AlarmedObject alarmedObject;
 
   @Valid
-  private List<@Valid Comment> comment = new ArrayList<>();
+  private List<@Valid Comment> comment;
 
   @Valid
-  private List<@Valid AlarmRef> correlatedAlarm = new ArrayList<>();
+  private List<@Valid AlarmRef> correlatedAlarm;
 
   private @Nullable CrossedThresholdInformation crossedThresholdInformation;
 
   @Valid
-  private List<@Valid AlarmRef> parentAlarm = new ArrayList<>();
+  private List<@Valid AlarmRef> parentAlarm;
 
   private @Nullable PerceivedSeverity perceivedSeverity;
 
   @Valid
-  private List<@Valid RelatedPlaceRefOrValue> place = new ArrayList<>();
+  private List<@Valid RelatedPlaceRefOrValue> place;
 
   private @Nullable String atBaseType;
 

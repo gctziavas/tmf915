@@ -218,7 +218,7 @@ POST state=reserved ────────────────────
 
 - **Restarts:** after a restart, the API re-schedules `reserved` models and the automatic teardown of `active` ones.
 - **Allowed state changes:** with `PATCH` you can request only `reserved` (from `feasibilityChecked`, `designed` or `terminated`) and `inactive` (from `active` or `reserved`). Anything else returns `400`. To redeploy an active model, set it to `inactive`, then to `reserved`. Sending the model's current state is accepted and changes nothing.
-- **Other changes:** other fields can be changed with `PATCH` at any time. `serviceCharacteristic` entries are merged by `name`.
+- **Other changes:** other fields can be changed with `PATCH` at any time. Send only what you change: lists you leave out (`note`, `software`, `relatedParty`, …) are kept, and a list you send replaces the stored one. `serviceCharacteristic` entries are merged by `name`.
 
 ---
 

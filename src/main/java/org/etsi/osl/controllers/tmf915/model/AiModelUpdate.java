@@ -16,6 +16,12 @@ import java.util.Objects;
 
 /**
  * AiModel is a base class for defining the AiModel hierarchy Skipped properties: id,href,serviceDate
+ *
+ * <p><b>PATCH semantics:</b> list fields have no default ({@code null}, not an empty list), so a
+ * list the client leaves out stays {@code null} and the stored list is kept. An empty list
+ * clears it. The generator's {@code = new ArrayList<>()} default made every PATCH erase the
+ * lists it did not send; keep it out if this class is regenerated
+ * (test: {@code AiModelListHttpTest.patch*_keepsListsTheClientDidNotSend}).
  */
 
 @Schema(name = "AiModel_Update", description = "AiModel is a base class for defining the AiModel hierarchy Skipped properties: id,href,serviceDate")
@@ -50,43 +56,43 @@ public class AiModelUpdate {
   private @Nullable AiModelSpecification aiModelSpecification;
 
   @Valid
-  private List<@Valid Feature> feature = new ArrayList<>();
+  private List<@Valid Feature> feature;
 
   private @Nullable ResourceRef gpu;
 
   @Valid
-  private List<@Valid Note> note = new ArrayList<>();
+  private List<@Valid Note> note;
 
   @Valid
-  private List<@Valid RelatedPlaceRefOrValue> place = new ArrayList<>();
+  private List<@Valid RelatedPlaceRefOrValue> place;
 
   @Valid
-  private List<@Valid RelatedEntityRefOrValue> relatedEntity = new ArrayList<>();
+  private List<@Valid RelatedEntityRefOrValue> relatedEntity;
 
   @Valid
-  private List<@Valid RelatedParty> relatedParty = new ArrayList<>();
+  private List<@Valid RelatedParty> relatedParty;
 
   @Valid
-  private List<@Valid Characteristic> serviceCharacteristic = new ArrayList<>();
+  private List<@Valid Characteristic> serviceCharacteristic;
 
   @Valid
-  private List<@Valid RelatedServiceOrderItem> serviceOrderItem = new ArrayList<>();
+  private List<@Valid RelatedServiceOrderItem> serviceOrderItem;
 
   @Valid
-  private List<@Valid ServiceRelationship> serviceRelationship = new ArrayList<>();
+  private List<@Valid ServiceRelationship> serviceRelationship;
 
   private @Nullable ServiceSpecificationRef serviceSpecification;
 
   @Valid
-  private List<@Valid SoftwareRef> software = new ArrayList<>();
+  private List<@Valid SoftwareRef> software;
 
   private @Nullable ServiceStateType state;
 
   @Valid
-  private List<@Valid ResourceRef> supportingResource = new ArrayList<>();
+  private List<@Valid ResourceRef> supportingResource;
 
   @Valid
-  private List<@Valid ServiceRefOrValue> supportingService = new ArrayList<>();
+  private List<@Valid ServiceRefOrValue> supportingService;
 
   private @Nullable EntityRef trainingData;
 

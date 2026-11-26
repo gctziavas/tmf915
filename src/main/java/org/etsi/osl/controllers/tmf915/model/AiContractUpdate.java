@@ -41,13 +41,13 @@ public class AiContractUpdate {
   private @Nullable EntityRef aiModel;
 
   @Valid
-  private List<@Valid Characteristic> characteristic = new ArrayList<>();
+  private List<@Valid Characteristic> characteristic;
 
   @Valid
-  private List<@Valid RelatedParty> relatedParty = new ArrayList<>();
+  private List<@Valid RelatedParty> relatedParty;
 
   @Valid
-  private List<@Valid Rule> rule = new ArrayList<>();
+  private List<@Valid Rule> rule;
 
   private @Nullable TemplateRef template;
 

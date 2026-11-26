@@ -32,19 +32,19 @@ public class AiContractSpecificationUpdate {
   private @Nullable String version;
 
   @Valid
-  private List<@Valid AttachmentRefOrValue> attachment = new ArrayList<>();
+  private List<@Valid AttachmentRefOrValue> attachment;
 
   @Valid
-  private List<@Valid ConstraintRef> constraint = new ArrayList<>();
+  private List<@Valid ConstraintRef> constraint;
 
   @Valid
-  private List<@Valid EntitySpecificationRelationship> entitySpecRelationship = new ArrayList<>();
+  private List<@Valid EntitySpecificationRelationship> entitySpecRelationship;
 
   @Valid
-  private List<@Valid RelatedParty> relatedParty = new ArrayList<>();
+  private List<@Valid RelatedParty> relatedParty;
 
   @Valid
-  private List<@Valid CharacteristicSpecification> specCharacteristic = new ArrayList<>();
+  private List<@Valid CharacteristicSpecification> specCharacteristic;
 
   private @Nullable TargetEntitySchema targetEntitySchema;
 
