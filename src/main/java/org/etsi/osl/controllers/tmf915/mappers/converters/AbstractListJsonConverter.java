@@ -22,7 +22,7 @@ public abstract class AbstractListJsonConverter<T> implements AttributeConverter
         try {
             return MAPPER.writeValueAsString(attribute);
         } catch (JsonProcessingException e) {
-            return "[]";
+            throw JsonColumnErrors.unwritable(getClass(), attribute, e);
         }
     }
 
@@ -32,7 +32,7 @@ public abstract class AbstractListJsonConverter<T> implements AttributeConverter
         try {
             return MAPPER.readValue(dbData, typeReference());
         } catch (JsonProcessingException e) {
-            return new ArrayList<>();
+            throw JsonColumnErrors.unreadable(getClass(), dbData, e);
         }
     }
 }

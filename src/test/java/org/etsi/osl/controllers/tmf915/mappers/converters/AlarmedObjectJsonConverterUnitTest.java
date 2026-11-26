@@ -55,8 +55,9 @@ class AlarmedObjectJsonConverterUnitTest {
     }
 
     @Test
-    void convertToEntityAttribute_invalidJson_returnsNull() {
-        assertNull(converter.convertToEntityAttribute("{broken"));
+    void convertToEntityAttribute_invalidJson_failsInsteadOfReadingAsEmpty() {
+        // Handoff 5.9: reading as null let the next save overwrite the stored data.
+        assertThrows(IllegalStateException.class, () -> converter.convertToEntityAttribute("{broken"));
     }
 
     @Test

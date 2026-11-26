@@ -468,6 +468,58 @@ class AiModelListHttpTest {
                 .andExpect(jsonPath("$.id").exists());
     }
 
+    // ── Bug-fix plan PR 6: unknown ids are 404 (handoff 4.4) ────────────
+
+    @Test
+    void unknownIds_are404_onBothResources() throws Exception {
+        String patch = "{\"description\":\"x\"}";
+        mockMvc.perform(patch(BASE + "/aiModel/no-such-model").contentType(MediaType.APPLICATION_JSON).content(patch))
+                .andExpect(status().isNotFound())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.content()
+                        .string(containsString("No AiModel with ID: no-such-model")));
+        mockMvc.perform(patch(BASE + "/aiModel/no-such-model").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"state\":\"reserved\"}"))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete(BASE + "/aiModel/no-such-model"))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(patch(BASE + "/aiModelSpecification/no-such-spec").contentType(MediaType.APPLICATION_JSON).content(patch))
+                .andExpect(status().isNotFound())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.content()
+                        .string(containsString("No AiModelSpecification with ID: no-such-spec")));
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete(BASE + "/aiModelSpecification/no-such-spec"))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(get(BASE + "/aiModel/no-such-model")).andExpect(status().isNotFound());
+        mockMvc.perform(get(BASE + "/aiModelSpecification/no-such-spec")).andExpect(status().isNotFound());
+    }
+
+    @Test
+    void invalidRequestsOnExistingIds_stay400() throws Exception {
+        String id = aiModelRepositoryService.findAiModels(0, 1).get(0).getId();
+        mockMvc.perform(patch(BASE + "/aiModel/" + id).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"state\":\"terminated\"}"))
+                .andExpect(status().isBadRequest());
+    }
+
+    // ── Bug-fix plan PR 6: unreadable JSON columns fail loudly (handoff 5.9) ──
+
+    @Test
+    void corruptJsonColumn_failsLoudly_andIsNotOverwritten() throws Exception {
+        String id = aiModelRepositoryService.findAiModels(0, 1).get(0).getId();
+        jdbcTemplate.update("UPDATE aim915_aim SET note = ? WHERE id = ?", "{broken json", id);
+
+        // Reading no longer pretends the notes are empty.
+        org.junit.jupiter.api.Assertions.assertThrows(Exception.class,
+                () -> mockMvc.perform(get(BASE + "/aiModel/" + id)));
+        // An update cannot write an empty list over the stored value either.
+        org.junit.jupiter.api.Assertions.assertThrows(Exception.class,
+                () -> mockMvc.perform(patch(BASE + "/aiModel/" + id).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"description\":\"x\"}")));
+
+        assertEquals("{broken json",
+                jdbcTemplate.queryForObject("SELECT note FROM aim915_aim WHERE id = ?", String.class, id));
+        jdbcTemplate.update("UPDATE aim915_aim SET note = '[]' WHERE id = ?", id);   // let tearDown delete it
+    }
+
     @Test
     void responsesLeaveOutNullFields() throws Exception {
         String models = mockMvc.perform(get(BASE + "/aiModel")).andReturn().getResponse().getContentAsString();

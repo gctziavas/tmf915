@@ -98,8 +98,19 @@ public class AiModelApiControllerTest {
 
     @Test
     public void testHandleBadRequest() {
-        ResponseEntity<String> response = controller.handleBadRequest(new IllegalArgumentException("test error"));
+        // Error mapping moved to ApiExceptionHandler (one @RestControllerAdvice for all controllers).
+        ApiExceptionHandler handler = new ApiExceptionHandler();
+        ResponseEntity<String> response = handler.badRequest(new IllegalArgumentException("test error"));
         assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
         assertEquals("test error", response.getBody());
+    }
+
+    @Test
+    public void testHandleNotFound() {
+        ApiExceptionHandler handler = new ApiExceptionHandler();
+        ResponseEntity<String> response = handler.notFound(
+                new org.etsi.osl.controllers.tmf915.reposervices.ResourceNotFoundException("No AiModel with ID: x"));
+        assertEquals(HttpStatus.NOT_FOUND, response.getStatusCode());
+        assertEquals("No AiModel with ID: x", response.getBody());
     }
 }

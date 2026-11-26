@@ -68,9 +68,10 @@ class CharacteristicListConverterUnitTest {
     }
 
     @Test
-    void convertToEntityAttribute_invalidJson_returnsEmptyList() {
-        List<Characteristic> result = converter.convertToEntityAttribute("{not valid json");
-        assertTrue(result.isEmpty());
+    void convertToEntityAttribute_invalidJson_failsInsteadOfReadingAsEmpty() {
+        IllegalStateException ex = assertThrows(IllegalStateException.class,
+                () -> converter.convertToEntityAttribute("{not valid json"));
+        assertTrue(ex.getMessage().contains("CharacteristicListConverter"), ex.getMessage());
     }
 
     @Test

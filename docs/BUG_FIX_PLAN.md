@@ -71,7 +71,7 @@ Client-visible: webhook subscribers start receiving `active`, `designed` and `te
 
 ## Milestone C: works on a fresh machine
 
-### PR 5: first-run experience (4.2, 4.7, 5.8, 5.11 rest, 4.6 per D4, 4.5) — done, uncommitted (acceptance run done on the owner's machine; it found and fixed three quick-start bugs, see the handoff)
+### PR 5: first-run experience (4.2, 4.7, 5.8, 5.11 rest, 4.6 per D4, 4.5) — done, committed (acceptance run done on the owner's machine; it found and fixed three quick-start bugs, see the handoff)
 
 Done one item at a time; each ticked item is complete (code, tests, docs), and the tree builds after each.
 
@@ -94,7 +94,13 @@ Acceptance: on a machine that has never run the project, `git clone` → `docker
 
 ## Milestone D: correct errors and data
 
-### PR 6: errors and data integrity (4.4, 5.9)
+### PR 6: errors and data integrity (4.4, 5.9) — done, uncommitted
+
+- [x] springdoc 3.x (optional). `springdoc.version` 2.6.0 → **3.0.3** (the 3.0.x line targets Spring Boot 4.0; 3.1.x and 3.2.x target Boot 4.1 and 4.2). `springdoc.show-actuator: true` removed from `application.yml`: Actuator is not a dependency, and springdoc 3 fails to start when asked to document it. `FieldsResponseBodyAdvice` is a plain `@ControllerAdvice` again; `FieldsResponseBodyAdviceConfiguration` (the `BeanPostProcessor` workaround) is deleted. `ResponseCompressionTest` fetches `/v3/api-docs` (200), so springdoc no longer breaks on `@ControllerAdvice`. 305 tests passing.
+- [x] 4.4: `404` for unknown ids on PATCH/DELETE, both resources. New `reposervices.ResourceNotFoundException` (extends `IllegalArgumentException`, so existing catches still work), thrown for unknown ids by both repository services and `AiModelLifecycleService`. New `api.ApiExceptionHandler` (`@RestControllerAdvice`, possible now that springdoc is 3.0.3) maps it to `404` and `IllegalArgumentException` to `400`, replacing the per-controller handlers in `AiModelApiController` and `EventsSubscriptionApiController`. Tests: `AiModelListHttpTest.unknownIds_are404_onBothResources` (PATCH with and without state, DELETE, GET; both resources), `invalidRequestsOnExistingIds_stay400`; `ErrorResponseTest.unknownId_isA404WithAReason` (real server); `ErrorResponseTest`'s 500 check now forces an exception through a mocked service, because its old trigger (an unknown specification id) is a 404 now. Client-visible: unknown ids on `aiModel` PATCH/DELETE `400` → `404`; on `aiModelSpecification` PATCH/DELETE `500` → `404`. Docs: `INTEGRATION_GUIDE.md` section 3. 309 tests passing.
+- [x] 5.9: converters fail loudly. `AbstractListJsonConverter`, `AbstractTypedJsonConverter` and `ObjectToJsonConverter` (the only converters with error handling) now throw `IllegalStateException` on unreadable stored JSON, logged at ERROR through the new `JsonColumnErrors` with the converter name and the value's length and first 80 characters. They also throw when a value cannot be written, which used to store `"[]"` or `null` and drop the data. Null and blank columns still read as empty. Tests: the three converter tests that asserted "invalid JSON reads as empty" now assert the exception; `GenericConverterTest` checks every JSON converter; `ObjectToJsonConverterUnitTest` covers the write failure and null/blank reads; `AiModelListHttpTest.corruptJsonColumn_failsLoudly_andIsNotOverwritten` corrupts a stored `note` and shows that GET and PATCH both fail and the stored value is unchanged. Docs: `USER_GUIDE.md` troubleshooting. **Release note:** rows whose JSON columns were corrupt used to read as empty and now give `500`. Find them before upgrading with `JSON_VALID`, per JSON column, e.g. `SELECT id FROM aim915_aim WHERE note <> '' AND NOT JSON_VALID(note);` (the JSON columns are listed in `DATABASE_SCHEMA.md`). 312 tests passing.
+- [x] Handoff "PR 6 outcome". `mvn clean test`: 312 tests, all passing.
+
 
 - Optional first step: upgrade springdoc to the 3.x line, which supports Spring Boot 4. That allows a single `@ControllerAdvice` for error mapping instead of per-controller handlers. `ResponseCompressionTest` guards `/v3/api-docs`. If the upgrade causes trouble, do 4.4 with per-controller `@ExceptionHandler`s as the handoff describes.
 - 4.4: `404` for unknown ids on PATCH/DELETE for both resources (client-visible: `aiModel` changes from `400` to `404`).

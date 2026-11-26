@@ -47,14 +47,14 @@ Not verified: the running application was never called. That the HTTP layer uses
 - **Part 1: done** and committed. See "Part 1 outcome" at the end of Part 1.
 - **Part 2: done** and committed. Item 5 was only partly done (not profiled). See "Part 2 outcome" at the end of Part 2.
 - **Part 3: done** and committed (up to `77f162a`). See "Part 3 outcome" at the end of Part 3.
-- **Part 4:** 4.1, 4.2, 4.3 (per D2), 4.5, 4.6 (per D4), 4.7 done (PRs 3 to 5). Open: 4.4 (PR 6); 4.8 (owner decision D5: document now, inference proxy after release).
+- **Part 4:** all done (PRs 3 to 6) except 4.8, which is the owner's decision D5: document now, inference proxy after release.
 - **Part 5: in progress**, following [`BUG_FIX_PLAN.md`](BUG_FIX_PLAN.md).
   - **PR 1:** committed (`14aef6b`): 5.1 steps 1 and 4, 5.13 step 1.
   - **PR 2:** committed (`4b83a01`): 5.1 steps 2 and 3, 5.2, 5.3, 5.4, 5.10, 5.13 step 2. See "PR 2 outcome" at the end of Part 5.
   - **PR 3:** committed (`66aa1de`): 4.3 (per D2), 5.7, 5.12, 5.11 (part). See "PR 3 outcome" at the end of Part 5.
   - **PR 4:** committed (`71c3994`): 5.6, 5.5, 4.1. See "PR 4 outcome" at the end of Part 5.
-  - **PR 5:** done, uncommitted: 5.8, the rest of 5.11, and Part 4 items 4.2, 4.5, 4.6, 4.7. See "PR 5 outcome" at the end of Part 5.
-  - **Open:** 5.9 and 4.4 (PR 6).
+  - **PR 5:** committed: 5.8, the rest of 5.11, and Part 4 items 4.2, 4.5, 4.6, 4.7. See "PR 5 outcome" at the end of Part 5.
+  - **PR 6:** done, uncommitted: 4.4, 5.9, and the springdoc upgrade. See "PR 6 outcome" at the end of Part 5. All Part 5 items are now done.
 
 ## Part 1: fix the AiModel list (requested)
 
@@ -665,6 +665,30 @@ Longer term, replace it with a maintained S3 server. RustFS (`rustfs/rustfs:1.0.
 **Observed, not a project bug:** Keycloak's first start took 1,514 s and MySQL's initialisation about 2 minutes. Docker's data lives on a 7200 rpm hard disk on that machine (130 ms per synced write, measured). On an SSD both take a fraction of that. `USER_GUIDE.md` now says the first start takes several minutes.
 
 `mvn clean test`: 305 tests, all passing.
+
+### PR 6 outcome (springdoc 3, 4.4, 5.9)
+
+Done one item at a time; the per-item details are in `BUG_FIX_PLAN.md` under PR 6.
+
+| Item | Change | Verified by |
+|---|---|---|
+| springdoc | 2.6.0 → **3.0.3**, the line that targets Spring Boot 4.0. `springdoc.show-actuator: true` removed: Actuator is not a dependency, and springdoc 3 fails to start when asked to document it. The `ControllerAdviceBean` incompatibility is gone: `FieldsResponseBodyAdvice` is a plain `@ControllerAdvice` again, and the `FieldsResponseBodyAdviceConfiguration` workaround is deleted. | `ResponseCompressionTest` gets `200` from `/v3/api-docs` with `@ControllerAdvice` beans present; the `fields` tests still pass. |
+| 4.4 | `reposervices.ResourceNotFoundException` (a subclass of `IllegalArgumentException`) for unknown ids. One `api.ApiExceptionHandler` (`@RestControllerAdvice`) maps it to `404` and `IllegalArgumentException` to `400`, replacing the per-controller handlers. | `AiModelListHttpTest` (PATCH with and without state, DELETE and GET on both resources give `404`; an invalid state change on an existing model stays `400`); `ErrorResponseTest` (real server: `404` body; a forced `500` has no message). |
+| 5.9 | The JSON converters throw on unreadable stored data and on unwritable values, instead of returning or storing empty values. They log at ERROR with the converter name and the value's start. | Converter unit tests; `AiModelListHttpTest.corruptJsonColumn_failsLoudly_andIsNotOverwritten` (a corrupt `note` column: GET and PATCH fail, and the stored value is unchanged). |
+
+**Client-visible:**
+
+- **Unknown ids:** on `aiModel` PATCH and DELETE, `400` → `404`; on `aiModelSpecification` PATCH and DELETE, `500` → `404`.
+- **Corrupt rows:** a row with a corrupt JSON column gives `500` instead of reading as empty.
+
+**Release notes:**
+
+- **Unknown ids:** clients that expected `400` for unknown ids must accept `404`.
+- **Corrupt rows:** find them before upgrading, per JSON column, e.g. `SELECT id FROM aim915_aim WHERE note <> '' AND NOT JSON_VALID(note);` (columns in `DATABASE_SCHEMA.md`).
+
+**Docs updated:** `INTEGRATION_GUIDE.md` section 3 (errors), `USER_GUIDE.md` troubleshooting, and `OPEN_SOURCE_ROADMAP.md` (the springdoc item is marked done).
+
+`mvn clean test`: 312 tests, all passing.
 
 ## Related bugs, not performance
 

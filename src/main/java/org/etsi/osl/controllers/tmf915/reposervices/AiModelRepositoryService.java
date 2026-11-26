@@ -98,7 +98,7 @@ public class AiModelRepositoryService {
     public AiModel updateAiModel(String id, AiModelUpdate aiModelUpdate) {
         log.info("AiModel UPDATE with ID: {}", id);
         AiModel existing = aiModelRepository.findById(id)
-                .orElseThrow(() -> new IllegalArgumentException("No AiModel with ID: " + id));
+                .orElseThrow(() -> new ResourceNotFoundException("No AiModel with ID: " + id));
         AiModelMapper.applyUpdate(existing, aiModelUpdate);
         normalize(existing);
         return normalize(aiModelRepository.save(existing));
@@ -107,7 +107,7 @@ public class AiModelRepositoryService {
     public void deleteAiModel(String id) {
         log.info("AiModel DELETE with ID: {}", id);
         AiModel aiModel = aiModelRepository.findById(id)
-                .orElseThrow(() -> new IllegalArgumentException("No AiModel with ID: " + id));
+                .orElseThrow(() -> new ResourceNotFoundException("No AiModel with ID: " + id));
         aiModelRepository.delete(aiModel);
     }
 
@@ -124,7 +124,7 @@ public class AiModelRepositoryService {
     public AiModel updateAiModelState(String id, ServiceStateType state) {
         log.info("AiModel UPDATE STATE with ID: {} to {}", id, state);
         AiModel aiModel = aiModelRepository.findById(id)
-                .orElseThrow(() -> new IllegalArgumentException("No AiModel with ID: " + id));
+                .orElseThrow(() -> new ResourceNotFoundException("No AiModel with ID: " + id));
         aiModel.setState(state);
         normalize(aiModel);
         return normalize(aiModelRepository.save(aiModel));

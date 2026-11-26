@@ -2,9 +2,7 @@ package org.etsi.osl.controllers.tmf915.api;
 
 import jakarta.annotation.Generated;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Controller;
-import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RequestMapping;
 
 import java.util.Optional;
@@ -25,10 +23,5 @@ public class EventsSubscriptionApiController implements EventsSubscriptionApi {
         return delegate;
     }
 
-    /** Rejected callbacks (see {@code CallbackUrlPolicy}): 400 with the reason. */
-    @ExceptionHandler(IllegalArgumentException.class)
-    public ResponseEntity<String> handleBadRequest(IllegalArgumentException ex) {
-        return ResponseEntity.badRequest().body(ex.getMessage());
-    }
 
 }

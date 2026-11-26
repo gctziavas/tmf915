@@ -18,7 +18,7 @@ public class ObjectToJsonConverter implements AttributeConverter<Object, String>
         try {
             return MAPPER.writeValueAsString(attribute);
         } catch (JsonProcessingException e) {
-            return null;
+            throw JsonColumnErrors.unwritable(getClass(), attribute, e);
         }
     }
 
@@ -28,7 +28,7 @@ public class ObjectToJsonConverter implements AttributeConverter<Object, String>
         try {
             return MAPPER.readValue(dbData, Object.class);
         } catch (JsonProcessingException e) {
-            return null;
+            throw JsonColumnErrors.unreadable(getClass(), dbData, e);
         }
     }
 }

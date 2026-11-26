@@ -30,7 +30,6 @@ springdoc:
   oAuthFlow:
     authorizationUrl: http://localhost:8080/auth/realms/openslice/protocol/openid-connect/auth
     tokenUrl: http://localhost:8080/auth/realms/openslice/protocol/openid-connect/token
-  show-actuator: true
 
 spring:
   web:

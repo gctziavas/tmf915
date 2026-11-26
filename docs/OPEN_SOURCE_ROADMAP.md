@@ -118,7 +118,7 @@ Open one issue per remaining handoff item (and 4.8 as a feature request). Label 
 
 ### 3.5 Dependencies and build
 
-- springdoc 2.6.0 is not fully compatible with Spring Framework 7 (handoff Part 2 notes). Move to the 3.x line.
+- ~~springdoc 2.6.0 is not fully compatible with Spring Framework 7 (handoff Part 2 notes). Move to the 3.x line.~~ Done in fix plan PR 6: springdoc 3.0.3.
 - JaCoCo 0.8.11 prints errors on recent JDKs. Upgrade it.
 - Remove the explicit `<version>` on `spring-boot-starter-data-jpa` (managed by the parent).
 - Pin the image tags of `minio/minio` and `ghcr.io/mlflow/mlflow` in Compose; both float to `latest` today.

@@ -12,7 +12,7 @@
         <!-- Spring Boot (keep in sync with <parent> version) -->
         <spring-boot.version>4.0.3</spring-boot.version>
         <!-- API / OpenAPI -->
-        <springdoc.version>2.6.0</springdoc.version>
+        <springdoc.version>3.0.3</springdoc.version>
         <swagger-ui.version>5.17.14</swagger-ui.version>
         <jackson-databind-nullable.version>0.2.9</jackson-databind-nullable.version>
         <!-- Database -->

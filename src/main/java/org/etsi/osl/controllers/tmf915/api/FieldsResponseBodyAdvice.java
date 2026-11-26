@@ -10,6 +10,7 @@ import org.springframework.http.converter.HttpMessageConverter;
 import org.springframework.http.server.ServerHttpRequest;
 import org.springframework.http.server.ServerHttpResponse;
 import org.springframework.http.server.ServletServerHttpRequest;
+import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseBodyAdvice;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
@@ -33,12 +34,8 @@ import java.util.stream.Collectors;
  * Entities are never modified. Without {@code fields} the body is passed through untouched.
  *
  * <p>This trims the response, not the database read.
- *
- * <p>Deliberately not a {@code @ControllerAdvice}: springdoc 2.6.0 calls a
- * {@code ControllerAdviceBean} constructor that Spring Framework 7 removed, so any
- * {@code @ControllerAdvice} bean makes {@code /v3/api-docs} (and Swagger UI) fail. It is
- * registered by {@link FieldsResponseBodyAdviceConfiguration} instead.
  */
+@ControllerAdvice(basePackageClasses = FieldsResponseBodyAdvice.class)
 public class FieldsResponseBodyAdvice implements ResponseBodyAdvice<Object> {
 
     static final String PARAM = "fields";

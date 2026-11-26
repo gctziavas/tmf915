@@ -18,8 +18,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * Checks gzip response compression on a real embedded server (MockMvc bypasses the servlet
  * container, which is where compression happens). Uses /v3/api-docs because it is a large
- * JSON response that needs no authentication. The 200 checks also guard against springdoc
- * breaking: springdoc 2.6.0 fails on Spring 7 as soon as any @ControllerAdvice bean exists.
+ * JSON response that needs no authentication. The 200 checks also guard springdoc: version 2.6.0
+ * failed on Spring 7 as soon as a @ControllerAdvice bean existed (fixed by upgrading to 3.0.3).
  */
 // server.compression comes from src/main/resources/application.yml, not from test settings.
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)

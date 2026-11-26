@@ -79,7 +79,7 @@ public class AiModelSpecificationRepositoryService {
     public AiModelSpecification updateAiModelSpecification(String id, AiModelSpecificationUpdate aiModelSpecUpdate) {
         log.info("AiModelSpecification UPDATE with ID: {}", id);
         AiModelSpecification existing = aiModelSpecificationRepository.findById(id)
-                .orElseThrow(() -> new IllegalArgumentException("No AiModelSpecification with ID: " + id));
+                .orElseThrow(() -> new ResourceNotFoundException("No AiModelSpecification with ID: " + id));
         AiModelSpecificationMapper.applyUpdate(existing, aiModelSpecUpdate);
         normalize(existing);
         return normalize(aiModelSpecificationRepository.save(existing));
@@ -88,7 +88,7 @@ public class AiModelSpecificationRepositoryService {
     public void deleteAiModelSpecification(String id) {
         log.info("AiModelSpecification DELETE with ID: {}", id);
         AiModelSpecification spec = aiModelSpecificationRepository.findById(id)
-                .orElseThrow(() -> new IllegalArgumentException("No AiModelSpecification with ID: " + id));
+                .orElseThrow(() -> new ResourceNotFoundException("No AiModelSpecification with ID: " + id));
         aiModelSpecificationRepository.delete(spec);
     }
 

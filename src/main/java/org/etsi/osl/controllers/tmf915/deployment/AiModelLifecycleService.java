@@ -1,5 +1,6 @@
 package org.etsi.osl.controllers.tmf915.deployment;
 
+import org.etsi.osl.controllers.tmf915.reposervices.ResourceNotFoundException;
 import org.etsi.osl.controllers.tmf915.model.AiModel;
 import org.etsi.osl.controllers.tmf915.model.AiModelCreate;
 import org.etsi.osl.controllers.tmf915.model.AiModelSpecification;
@@ -190,7 +191,7 @@ public class AiModelLifecycleService {
         }
         AiModel current = repoService.findAiModelById(id);
         if (current == null) {
-            throw new IllegalArgumentException("No AiModel with ID: " + id);
+            throw new ResourceNotFoundException("No AiModel with ID: " + id);
         }
         ServiceStateType currentState = current.getState();
         if (requested == currentState) {
@@ -256,7 +257,7 @@ public class AiModelLifecycleService {
         txTemplate.executeWithoutResult(status -> {
             AiModel aiModel = repoService.findAiModelById(id);
             if (aiModel == null) {
-                throw new IllegalArgumentException("No AiModel with ID: " + id);
+                throw new ResourceNotFoundException("No AiModel with ID: " + id);
             }
 
             PlatformDeployer deployer = findDeployer(aiModel);

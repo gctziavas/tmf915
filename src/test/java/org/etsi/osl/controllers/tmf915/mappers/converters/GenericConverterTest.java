@@ -9,6 +9,7 @@ import org.springframework.core.type.filter.AssignableTypeFilter;
 import java.util.ArrayList;
 import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.*;
 
 public class GenericConverterTest {
@@ -33,9 +34,13 @@ public class GenericConverterTest {
             
             assertDoesNotThrow(() -> converter.convertToDatabaseColumn(null));
             assertDoesNotThrow(() -> converter.convertToEntityAttribute(null));
-            try {
-                converter.convertToEntityAttribute("invalid json");
-            } catch (Exception ignored) {}
+            if (AbstractListJsonConverter.class.isAssignableFrom(clazz)
+                    || AbstractTypedJsonConverter.class.isAssignableFrom(clazz)
+                    || ObjectToJsonConverter.class.equals(clazz)) {
+                // Handoff 5.9: every JSON converter fails on unreadable data instead of returning empty.
+                assertThrows(IllegalStateException.class, () -> converter.convertToEntityAttribute("invalid json"),
+                        className);
+            }
             
             if (AbstractListJsonConverter.class.isAssignableFrom(clazz)) {
                 List<Object> emtpyList = new ArrayList<>();

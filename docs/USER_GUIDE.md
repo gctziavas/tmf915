@@ -264,4 +264,5 @@ Settings live in `src/main/resources/application.yml`. In Docker Compose, overri
 | `415 Unsupported Media Type` | Send `Content-Type: application/json`. |
 | `400` on `POST /aiModel` | The response's `errors` list names the field. The most common one is a missing `software` (`[{"id": "mlflow"}]` is enough). |
 | `400` when registering a webhook | The callback is not an `http`/`https` URL, or it points at an internal address; the response says which. See `hub.webhook.allowed-callback-hosts`. |
+| `500` for one model or specification only | The API log says `… cannot read a stored JSON value`: one of its JSON columns in the database is corrupt. The API refuses to read it rather than show it as empty (which would let the next update erase it). Fix or clear that column in MySQL; the log names the converter and shows how the value starts. |
 | Anything else | `docker compose logs -f tmf915` |

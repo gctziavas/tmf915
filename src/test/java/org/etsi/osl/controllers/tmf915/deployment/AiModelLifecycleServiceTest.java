@@ -313,7 +313,8 @@ public class AiModelLifecycleServiceTest {
         when(repoService.findAiModelById("missing")).thenReturn(null);
         AiModelUpdate update = new AiModelUpdate();
         update.setState(ServiceStateType.RESERVED);
-        assertThrows(IllegalArgumentException.class, () -> service.updateAiModel("missing", update));
+        assertThrows(org.etsi.osl.controllers.tmf915.reposervices.ResourceNotFoundException.class,
+                () -> service.updateAiModel("missing", update));
     }
 
     // ── 5.2: derived names never repeat ─────────────────────────────────

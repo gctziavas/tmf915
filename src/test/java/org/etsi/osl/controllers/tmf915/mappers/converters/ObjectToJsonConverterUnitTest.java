@@ -64,7 +64,19 @@ class ObjectToJsonConverterUnitTest {
     }
 
     @Test
-    void convertToEntityAttribute_invalidJson_returnsNull() {
-        assertNull(converter.convertToEntityAttribute("{invalid"));
+    void convertToEntityAttribute_invalidJson_failsInsteadOfReadingAsEmpty() {
+        assertThrows(IllegalStateException.class, () -> converter.convertToEntityAttribute("{invalid"));
+    }
+
+    @Test
+    void convertToDatabaseColumn_unserialisableValue_failsInsteadOfStoringNull() {
+        // Before, the column was written as null, silently dropping the value.
+        assertThrows(IllegalStateException.class, () -> converter.convertToDatabaseColumn(new Object()));
+    }
+
+    @Test
+    void nullAndBlankColumns_stillReadAsEmpty() {
+        assertNull(converter.convertToEntityAttribute(null));
+        assertNull(converter.convertToEntityAttribute("  "));
     }
 }

@@ -37,6 +37,10 @@ class ErrorResponseTest {
     @MockitoBean
     private JwtDecoder jwtDecoder;
 
+    /** Lets a test force an unexpected exception inside a request. */
+    @MockitoBean
+    private org.etsi.osl.controllers.tmf915.reposervices.AiModelRepositoryService aiModelRepositoryService;
+
     private final HttpClient client = HttpClient.newHttpClient();
 
     @BeforeEach
@@ -71,14 +75,23 @@ class ErrorResponseTest {
 
     @Test
     void unexpectedServerError_doesNotEchoTheExceptionMessage() throws Exception {
-        // Known 500 (handoff 4.4): the message names the id; error responses must not include it.
-        HttpResponse<String> response = send("PATCH", "/aiModelSpecification/no-such-spec-1234",
-                "{\"description\":\"x\"}");
+        when(aiModelRepositoryService.findAiModels(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+                .thenThrow(new IllegalStateException("Connection to jdbc:mysql://mysql:3306/aim915db refused"));
+
+        HttpResponse<String> response = send("GET", "/aiModel", "");
 
         assertEquals(500, response.statusCode(), response.body());
-        assertFalse(response.body().contains("No AiModelSpecification"), response.body());
-        // `path` echoes the requested URL, which the client already knows; there is no message.
+        assertFalse(response.body().contains("jdbc:mysql"), response.body());
         assertFalse(response.body().contains("\"message\""), response.body());
+    }
+
+    @Test
+    void unknownId_isA404WithAReason() throws Exception {
+        // Real server: the advice's 404 body reaches the client (handoff 4.4).
+        HttpResponse<String> response = send("DELETE", "/aiModelSpecification/no-such-spec", "");
+
+        assertEquals(404, response.statusCode(), response.body());
+        assertTrue(response.body().contains("No AiModelSpecification with ID: no-such-spec"), response.body());
     }
 
     @Test
