@@ -51,7 +51,7 @@ public class AiModelApiController implements AiModelApi {
     public ResponseEntity<List<AiModel>> listAiModel(@Nullable String fields,
                                                       @Nullable Integer offset,
                                                       @Nullable Integer limit) {
-        return ResponseEntity.ok(repoService.findAllAiModels());
+        return ResponseEntity.ok(repoService.findAiModels(offset, limit));
     }
 
     @Override

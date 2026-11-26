@@ -7,7 +7,7 @@ import org.etsi.osl.controllers.tmf915.model.AiModelSpecificationUpdate;
 import org.etsi.osl.controllers.tmf915.repo.AiModelSpecificationRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 
 import java.net.URI;
@@ -28,13 +28,10 @@ public class AiModelSpecificationRepositoryService {
         this.aiModelSpecificationRepository = aiModelSpecificationRepository;
     }
 
-    private static final int DEFAULT_LIMIT = 50;
-
     public List<AiModelSpecification> findAllAiModelSpecifications(Integer offset, Integer limit) {
         log.info("AiModelSpecifications LIST (offset={}, limit={})", offset, limit);
-        int page = (offset != null && offset >= 0) ? offset : 0;
-        int size = (limit != null && limit > 0) ? limit : DEFAULT_LIMIT;
-        return aiModelSpecificationRepository.findAll(PageRequest.of(page / size, size)).getContent().stream()
+        OffsetPageable page = OffsetPageable.of(offset, limit, Sort.by("id"));
+        return aiModelSpecificationRepository.findAll(page).getContent().stream()
                 .map(this::normalize)
                 .toList();
     }

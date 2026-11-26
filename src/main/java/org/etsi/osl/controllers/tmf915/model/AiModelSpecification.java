@@ -114,6 +114,7 @@ public class AiModelSpecification {
   private List<@Valid ServiceSpecRelationship> serviceSpecRelationship = new ArrayList<>();
 
   @OneToMany(cascade = CascadeType.ALL, orphanRemoval = true)
+  @org.hibernate.annotations.BatchSize(size = 50)
   @JoinColumn(name = "aim_spec_id")
   @Valid
   private List<@Valid CharacteristicSpecification> specCharacteristic = new ArrayList<>();

@@ -43,6 +43,11 @@ spring:
   web:
     error:
       include-message: always
+  ai:
+    mcp:
+      server:
+        name: tmf915-ai-catalog-mcp
+        version: 1.0.0
   application:
     name: openslice-aim915-api
   datasource:

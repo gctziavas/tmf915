@@ -1,6 +1,7 @@
 package org.etsi.osl.controllers.tmf915;
 
 import com.fasterxml.jackson.databind.Module;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.openapitools.jackson.nullable.JsonNullableModule;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
@@ -28,6 +29,11 @@ public class OpenApiGeneratorApplication {
     @Bean(name = "org.etsi.osl.controllers.tmf915.OpenApiGeneratorApplication.jsonNullableModule")
     public Module jsonNullableModule() {
         return new JsonNullableModule();
+    }
+
+    @Bean(name = "org.etsi.osl.controllers.tmf915.OpenApiGeneratorApplication.objectMapper")
+    public ObjectMapper objectMapper() {
+        return new ObjectMapper().registerModule(new JsonNullableModule());
     }
 
 }

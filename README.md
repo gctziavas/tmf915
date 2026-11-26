@@ -336,3 +336,97 @@ PATH="$(pwd)/.venv/bin:$PATH" mvn test -Dspring.profiles.active=integration
 Integration tests connect to the services configured in
 `src/test/resources/application.yml` under the `integration` profile
 (MLflow tracking server, MinIO S3, remote Docker daemon).
+
+## MCP Server Testing
+
+The project exposes an MCP server via Spring AI over SSE + JSON-RPC.
+
+Base URL in Docker Compose:
+
+```text
+http://localhost:13082/tmf-api
+```
+
+Transport endpoints:
+
+- `GET /sse` (opens SSE stream and emits a dynamic message endpoint)
+- `POST /mcp/message?sessionId=...` (JSON-RPC requests)
+
+### Quick Manual Test (curl)
+
+1. Open SSE stream in one terminal:
+
+```bash
+curl -N http://localhost:13082/tmf-api/sse
+```
+
+2. Copy `sessionId` from the SSE output (`id:` field), then send JSON-RPC requests from a second terminal:
+
+```bash
+SESSION_ID="<paste-session-id>"
+BASE="http://localhost:13082/tmf-api"
+
+curl -X POST "$BASE/mcp/message?sessionId=$SESSION_ID" \
+    -H "content-type: application/json" \
+    -d '{"jsonrpc":"2.0","id":"init-1","method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"curl","version":"1.0"}}}'
+
+curl -X POST "$BASE/mcp/message?sessionId=$SESSION_ID" \
+    -H "content-type: application/json" \
+    -d '{"jsonrpc":"2.0","method":"notifications/initialized","params":{}}'
+
+curl -X POST "$BASE/mcp/message?sessionId=$SESSION_ID" \
+    -H "content-type: application/json" \
+    -d '{"jsonrpc":"2.0","id":"tools-1","method":"tools/list","params":{}}'
+```
+
+Note: Responses are delivered over SSE, so the POST request body can be empty even when calls succeed.
+
+## Sample MCP Client
+
+A runnable sample client is available at:
+
+- `scripts/mcp_sample_client.py`
+- `scripts/mcp_interactive_lookup_client.py`
+
+It performs:
+
+1. SSE connect and session endpoint discovery
+2. `initialize` and `notifications/initialized`
+3. `tools/list`
+4. `tools/call` for:
+     - `listAvailableAiModelSpecifications`
+     - `listAvailableAiModels`
+
+Run it with:
+
+```bash
+python3 scripts/mcp_sample_client.py
+```
+
+Optional arguments:
+
+```bash
+python3 scripts/mcp_sample_client.py --base-url http://localhost:13082/tmf-api --spec-offset 0 --spec-limit 20
+```
+
+### Interactive Lookup Client
+
+The interactive client prompts for IDs and calls:
+
+1. `getAiModelSpecification`
+2. `getAiModel`
+
+Run interactively:
+
+```bash
+python3 scripts/mcp_interactive_lookup_client.py --base-url http://localhost:13082/tmf-api
+```
+
+Or prefill IDs from CLI:
+
+```bash
+python3 scripts/mcp_interactive_lookup_client.py \
+    --base-url http://localhost:13082/tmf-api \
+    --specification-id <AI_MODEL_SPECIFICATION_ID> \
+    --model-id <AI_MODEL_ID>
+```

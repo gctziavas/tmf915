@@ -62,7 +62,7 @@ public class AiModelApiControllerTest {
 
     @Test
     public void testListAiModel() {
-        when(repoService.findAllAiModels()).thenReturn(Collections.singletonList(aiModel));
+        when(repoService.findAiModels(null, null)).thenReturn(Collections.singletonList(aiModel));
         
         ResponseEntity<List<AiModel>> response = controller.listAiModel(null, null, null);
         assertEquals(HttpStatus.OK, response.getStatusCode());

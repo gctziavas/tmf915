@@ -2,13 +2,11 @@ package org.etsi.osl.controllers.tmf915.model;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.annotation.Generated;
 import jakarta.persistence.Entity;
 import jakarta.persistence.*;
 import jakarta.validation.Valid;
-import org.etsi.osl.controllers.tmf915.mappers.AiModelSpecificationRefSerializer;
 import org.etsi.osl.controllers.tmf915.mappers.converters.*;
 import org.jspecify.annotations.Nullable;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -103,6 +101,7 @@ public class AiModel {
   private List<@Valid RelatedParty> relatedParty = new ArrayList<>();
 
   @OneToMany(cascade = CascadeType.ALL, orphanRemoval = true)
+  @org.hibernate.annotations.BatchSize(size = 50)
   @JoinColumn(name = "aim_id")
   @Valid
   private List<@Valid Characteristic> serviceCharacteristic = new ArrayList<>();
@@ -467,15 +466,26 @@ public class AiModel {
   }
 
   /**
-   * Get aiModelSpecification
+   * The specification entity this model was instantiated from. Lazily loaded; not written to
+   * JSON directly — see {@link #getAiModelSpecificationRef()}.
    * @return aiModelSpecification
    */
-  @Valid 
-  @Schema(name = "aiModelSpecification", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
-  @JsonProperty("aiModelSpecification")
-  @JsonSerialize(using = AiModelSpecificationRefSerializer.class)
+  @Valid
+  @JsonIgnore
   public @Nullable AiModelSpecification getAiModelSpecification() {
     return aiModelSpecification;
+  }
+
+  /**
+   * JSON view of {@link #aiModelSpecification}: a slim reference built from the stored
+   * {@link #serviceSpecification} columns, so listing models does not load or embed the
+   * full specification.
+   * @return reference to the specification, or null if none
+   */
+  @Schema(name = "aiModelSpecification", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+  @JsonProperty(value = "aiModelSpecification", access = JsonProperty.Access.READ_ONLY)
+  public @Nullable AiModelSpecificationRef getAiModelSpecificationRef() {
+    return AiModelSpecificationRef.of(aiModelSpecification, serviceSpecification);
   }
 
   @JsonProperty("aiModelSpecification")

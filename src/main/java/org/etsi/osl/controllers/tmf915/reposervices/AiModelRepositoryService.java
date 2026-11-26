@@ -8,8 +8,10 @@ import org.etsi.osl.controllers.tmf915.model.AiModelUpdate;
 import org.etsi.osl.controllers.tmf915.model.ServiceStateType;
 import org.etsi.osl.controllers.tmf915.model.ServiceSpecificationRef;
 import org.etsi.osl.controllers.tmf915.repo.AiModelRepository;
+import org.hibernate.Hibernate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 
 import java.net.URI;
@@ -42,6 +44,20 @@ public class AiModelRepositoryService {
         List<AiModel> result = new ArrayList<>();
         aiModelRepository.findAll().forEach(model -> result.add(normalize(model)));
         return result;
+    }
+
+    /**
+     * One page of AiModels, ordered by id so consecutive pages do not overlap.
+     *
+     * @param offset zero-based row offset (null = 0)
+     * @param limit  page size (null = {@link OffsetPageable#DEFAULT_LIMIT})
+     */
+    public List<AiModel> findAiModels(Integer offset, Integer limit) {
+        OffsetPageable page = OffsetPageable.of(offset, limit, Sort.by("id"));
+        log.info("AiModels LIST (offset={}, limit={})", page.getOffset(), page.getPageSize());
+        return aiModelRepository.findAllBy(page).stream()
+                .map(this::normalize)
+                .toList();
     }
 
     public AiModel findAiModelById(String id) {
@@ -126,7 +142,7 @@ public class AiModelRepositoryService {
         }
 
         AiModelSpecification specification = model.getAiModelSpecification();
-        if (specification != null) {
+        if (specification != null && Hibernate.isInitialized(specification)) {
             normalizeSpecification(specification);
             model.setServiceSpecification(toServiceSpecificationRef(specification, model.getServiceSpecification()));
         }
@@ -148,7 +164,13 @@ public class AiModelRepositoryService {
 
     private ServiceSpecificationRef toServiceSpecificationRef(AiModelSpecification specification,
                                                               ServiceSpecificationRef existingRef) {
-        ServiceSpecificationRef ref = existingRef != null ? existingRef : new ServiceSpecificationRef(specification.getId());
+        // A stored reference to a different specification is stale (the model was re-pointed via
+        // PATCH); rebuild it, since the JSON view of aiModelSpecification is served from it.
+        boolean stale = existingRef != null && specification.getId() != null
+                && !specification.getId().equals(existingRef.getId());
+        ServiceSpecificationRef ref = (existingRef != null && !stale)
+                ? existingRef
+                : new ServiceSpecificationRef(specification.getId());
         if (ref.getId() == null) {
             ref.setId(specification.getId());
         }

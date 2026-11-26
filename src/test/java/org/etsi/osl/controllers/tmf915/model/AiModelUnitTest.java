@@ -78,9 +78,33 @@ public class AiModelUnitTest {
         model.setId("model-1");
         model.setAiModelSpecification(specification);
 
-        ObjectMapper mapper = new ObjectMapper();
-        String json = mapper.writeValueAsString(model);
+        // Jackson 3 is what Spring MVC uses for responses; Jackson 2 is used for webhook payloads.
+        assertSerializesAsReference(tools.jackson.databind.json.JsonMapper.builder().build().writeValueAsString(model));
+        assertSerializesAsReference(new ObjectMapper().writeValueAsString(model));
+    }
 
+    @Test
+    public void testStaleStoredReferenceIsIgnored() throws Exception {
+        AiModelSpecification specification = new AiModelSpecification();
+        specification.setId("spec-new");
+        specification.setName("New Spec");
+        specification.setVersion("2.0");
+
+        ServiceSpecificationRef stale = new ServiceSpecificationRef("spec-old");
+        stale.setName("Old Spec");
+
+        AiModel model = new AiModel();
+        model.setAiModelSpecification(specification);
+        model.setServiceSpecification(stale);
+
+        String json = tools.jackson.databind.json.JsonMapper.builder().build().writeValueAsString(model);
+        assertTrue(json.contains("\"id\":\"spec-new\""), json);
+        assertTrue(json.contains("\"name\":\"New Spec\""), json);
+        assertTrue(json.contains("\"href\":\"/tmf-api/AiM/v4/aiModelSpecification/spec-new\""), json);
+        assertFalse(json.contains("Old Spec"), json);
+    }
+
+    private static void assertSerializesAsReference(String json) {
         assertTrue(json.contains("\"aiModelSpecification\""));
         assertTrue(json.contains("\"id\":\"spec-123\""));
         assertTrue(json.contains("\"href\":\"/tmf-api/AiM/v4/aiModelSpecification/spec-123\""));
