@@ -101,6 +101,8 @@ mlflow: # MLflow configuration for AIM915 model management
   s3-secret-key: ""
   sync: # Periodic sync of MLflow models to TMF 915 AiModelSpecifications
     enabled: true
+    # The schedule is the catalog sync's, shared by all platforms: aimodel.catalog.sync.interval-ms
+    # and full-interval-ms, which default to these two values.
     interval-ms: 60000 # 1 minute
     # Every full-interval-ms all logged models are fetched; in between, only models created since
     # the last search (if the MLflow server supports the creation_time filter).

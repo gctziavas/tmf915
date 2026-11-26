@@ -235,8 +235,8 @@ Settings live in `src/main/resources/application.yml`. In Docker Compose, overri
 | `mlflow.tracking-uri` | `http://127.0.0.1:5000` | MLflow server. |
 | `mlflow.s3-endpoint-url`, `s3-access-key`, `s3-secret-key` | empty | MinIO/S3 holding the model artifacts. Also set by the environment variables `MLFLOW_S3_ENDPOINT_URL`, `MLFLOW_S3_ACCESS_KEY`, `MLFLOW_S3_SECRET_KEY`, which win. Used by the MLflow sync and by model downloads; without them, nothing can be downloaded. |
 | `mlflow.sync.enabled` | `true` | Publish MLflow models to the catalog automatically. |
-| `mlflow.sync.interval-ms` | `60000` | How often to look for new models. |
-| `mlflow.sync.full-interval-ms` | `600000` | How often to re-read all models (in between, only new ones are fetched). |
+| `aimodel.catalog.sync.interval-ms` | `60000` | How often to look for new models, on every platform. If unset, `mlflow.sync.interval-ms` is used (the setting's earlier name, still read). |
+| `aimodel.catalog.sync.full-interval-ms` | `600000` | How often to re-read all models (in between, only new ones are fetched). If unset, `mlflow.sync.full-interval-ms` is used. |
 | `mlflow.docker.host` | local socket | Default Docker daemon for deployments. |
 | `mlflow.docker.allowed-hosts` | empty | Other Docker daemons clients may name in the `dockerHost` characteristic, comma-separated (for example `tcp://10.0.0.5:2375,tcp://10.0.0.6:2375`). `mlflow.docker.host` is always allowed. |
 | `mlflow.docker.host-port-start`, `host-port-end` | `3000`–`7000` | Port range for model endpoints. |
@@ -261,7 +261,7 @@ Settings live in `src/main/resources/application.yml`. In Docker Compose, overri
 |---|---|
 | Every call returns `401` | The token is expired, or its issuer doesn't match `keycloak.issuer-uri`. Get a new token from the exact URL configured (see 1.1). |
 | `403` | The user lacks the realm role `ROLE_USER`. |
-| A newly logged model is not in the catalog | Wait one or two minutes. Then check the API log (`docker compose logs tmf915 \| grep "MLflow sync"`). "no artifacts were found" means the files are not in MinIO yet; the API retries every 10 minutes. |
+| A newly logged model is not in the catalog | Wait one or two minutes. Then check the API log (`docker compose logs tmf915 \| grep "Catalog sync"`). "no artifacts were found" means the files are not in MinIO yet; the API retries every 10 minutes. |
 | Model stays `reserved` | `startDate` is in the future, the image is still building (minutes), or the `platform=mlflow` characteristic is missing. |
 | Model goes back to `designed` | Read the last `note`. It gives a short reason and a reference, for example `Image build failed (reference 3f2c9a1b; details are in the server log)`. Find the details with `docker compose logs tmf915 \| grep 3f2c9a1b`. "model files not found": the artifacts are missing in MinIO. "No free host port": every port in `host-port-start`–`host-port-end` is taken. "Docker host not allowed": see `mlflow.docker.allowed-hosts`. |
 | Model disappeared from `active` after a day | `endDate` defaults to one day after `startDate`. Set `endDate` when deploying. |

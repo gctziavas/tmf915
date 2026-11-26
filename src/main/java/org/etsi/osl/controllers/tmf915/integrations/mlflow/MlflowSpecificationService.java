@@ -1,9 +1,6 @@
 package org.etsi.osl.controllers.tmf915.integrations.mlflow;
 
 import org.etsi.osl.controllers.tmf915.artifacts.ArtifactCharacteristics;
-import org.etsi.osl.controllers.tmf915.artifacts.ArtifactLocation;
-import org.etsi.osl.controllers.tmf915.artifacts.ArtifactService;
-import org.etsi.osl.controllers.tmf915.artifacts.DownloadAttachments;
 import org.etsi.osl.controllers.tmf915.model.AiModelSpecificationCreate;
 import org.etsi.osl.controllers.tmf915.model.CharacteristicSpecification;
 import org.etsi.osl.controllers.tmf915.model.CharacteristicValueSpecification;
@@ -23,8 +20,6 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
-import java.net.URI;
-import java.net.URISyntaxException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -49,7 +44,6 @@ public class MlflowSpecificationService {
     static final String DOWNLOADABLE_TAG = "downloadable";
 
     private final MlflowClientService mlflowClient;
-    private final ArtifactService artifactService;
 
     @Value("${mlflow.tracking-uri:}")
     private String mlflowTrackingUri;
@@ -57,9 +51,8 @@ public class MlflowSpecificationService {
     @Value("${aimodel.specification.default-lifecycle-status:Active}")
     private String defaultLifecycleStatus;
 
-    public MlflowSpecificationService(MlflowClientService mlflowClient, ArtifactService artifactService) {
+    public MlflowSpecificationService(MlflowClientService mlflowClient) {
         this.mlflowClient = mlflowClient;
-        this.artifactService = artifactService;
     }
 
     /**
@@ -139,13 +132,12 @@ public class MlflowSpecificationService {
         addLoggedModelParamCharacteristics(spec, loggedModel);
         addLoggedModelMetricCharacteristics(spec, loggedModel);
         addLoggedModelTagCharacteristics(spec, info);
-        addDownloadCharacteristics(spec, loggedModelTag(info, DOWNLOADABLE_TAG));
+        addDownloadableCharacteristic(spec, loggedModelTag(info, DOWNLOADABLE_TAG));
 
         // Artifact URLs
         if (info.getArtifactUri() != null) {
             spec.setModelDataSheet(info.getArtifactUri());
         }
-        addDownloadAttachment(spec, info.getArtifactUri());
 
         log.info("Created AiModelSpecification for logged model {}", info.getModelId());
         return spec;
@@ -224,44 +216,16 @@ public class MlflowSpecificationService {
                 "tags", "MLflow model tags", String.join(", ", tagStrings)));
     }
 
-    // ── Model downloads (platform-neutral fields) ──────────────────────
+    // ── Model downloads ─────────────────────────────────────────────────
+    // platform, artifactFormat and the download attachment are added by the catalog sync
+    // (catalog.CatalogSyncService) for every platform; only the MLflow tag is read here.
 
-    /**
-     * {@code platform=mlflow} and {@code artifactFormat=mlflow-model}, which select the
-     * {@link MlflowArtifactLocator}, and the publisher's {@code downloadable} tag if set.
-     */
-    private void addDownloadCharacteristics(AiModelSpecificationCreate spec, String downloadableTag) {
-        spec.addSpecCharacteristicItem(createCharacteristicSpec(ArtifactCharacteristics.PLATFORM,
-                "Model platform", MlflowArtifactLocator.PLATFORM));
-        spec.addSpecCharacteristicItem(createCharacteristicSpec(ArtifactCharacteristics.ARTIFACT_FORMAT,
-                "Format of the model files (see GET .../artifacts)", MlflowArtifactLocator.FORMAT));
+    /** The publisher's {@code downloadable} tag, if set, as the {@code downloadable} characteristic. */
+    private void addDownloadableCharacteristic(AiModelSpecificationCreate spec, String downloadableTag) {
         if (downloadableTag != null && !downloadableTag.isBlank()) {
             spec.addSpecCharacteristicItem(createCharacteristicSpec(ArtifactCharacteristics.DOWNLOADABLE,
                     "false: the publisher does not allow downloading the model files", downloadableTag.trim()));
         }
-    }
-
-    /**
-     * Advertises the download as an {@code attachment}, with the files' total size read from
-     * storage now. Left out when the model opts out, or its files are not downloadable (outside
-     * the allow-list, no storage configured, nothing stored, above the size limit). The
-     * attachment's {@code href} is filled in when the specification is stored and has an id.
-     */
-    private void addDownloadAttachment(AiModelSpecificationCreate spec, String artifactUri) {
-        if (artifactUri == null || artifactUri.isBlank()
-                || ArtifactCharacteristics.optedOut(spec.getSpecCharacteristic())) {
-            return;
-        }
-        URI location;
-        try {
-            location = new URI(artifactUri);
-        } catch (URISyntaxException e) {
-            log.debug("Artifact URI {} is not a valid URI; no download attachment", artifactUri);
-            return;
-        }
-        artifactService.inspect(new ArtifactLocation(location, MlflowArtifactLocator.FORMAT))
-                .ifPresent(artifact -> spec.addAttachmentItem(
-                        DownloadAttachments.create(spec.getName(), spec.getVersion(), artifact)));
     }
 
     private static String loggedModelTag(LoggedModel.LoggedModelInfo info, String key) {
@@ -348,10 +312,9 @@ public class MlflowSpecificationService {
         addFrameworkCharacteristics(spec, modelVersion, run);
         addMetricsCharacteristics(spec, run);
         addTagsCharacteristics(spec, modelVersion, registeredModel);
-        addDownloadCharacteristics(spec, registryTag(modelVersion, registeredModel, DOWNLOADABLE_TAG));
+        addDownloadableCharacteristic(spec, registryTag(modelVersion, registeredModel, DOWNLOADABLE_TAG));
         // Set artifact URLs (TMF 915 standard fields)
         setArtifactUrls(spec, modelVersion, run, baseUrl, modelId);
-        addDownloadAttachment(spec, modelVersion.getSource());
 
         log.info("Created AiModelSpecification for {} v{}", modelName, version);
         return spec;

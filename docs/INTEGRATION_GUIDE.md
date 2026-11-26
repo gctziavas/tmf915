@@ -1,6 +1,6 @@
 # Integration guide
 
-For developers who connect another system to the TMF 915 AI Management API (an OSS/BSS, an orchestrator, a portal, an AI agent), and for developers who add a new serving platform next to MLflow. For running the platform and trying calls by hand, see the [user guide](USER_GUIDE.md).
+For developers who connect another system to the TMF 915 AI Management API (an OSS/BSS, an orchestrator, a portal, an AI agent), and for developers who add a new model platform next to MLflow. For running the platform and trying calls by hand, see the [user guide](USER_GUIDE.md).
 
 ## Contents
 
@@ -11,7 +11,7 @@ For developers who connect another system to the TMF 915 AI Management API (an O
 5. [Using a model as a library](#5-using-a-model-as-a-library)
 6. [Event notifications (webhooks)](#6-event-notifications-webhooks)
 7. [MCP server for AI agents](#7-mcp-server-for-ai-agents)
-8. [Adding a serving platform](#8-adding-a-serving-platform)
+8. [Adding a model platform](#8-adding-a-model-platform)
 9. [Limitations](#9-limitations)
 
 ---
@@ -24,7 +24,7 @@ For developers who connect another system to the TMF 915 AI Management API (an O
 | **Webhooks** (TMF Hub), `/tmf-api/AiM/v4/hub` | Be told when a model is created, updated, stopped or deleted through the API | Token to register; callbacks are unauthenticated |
 | **Model download**, `/tmf-api/AiM/v4/aiModelSpecification/{id}/artifacts` | Run a catalogued model in your own code instead of calling a deployed endpoint | Bearer token (Keycloak) |
 | **MCP server**, `/tmf-api/sse` | Let an AI agent browse the catalog and the deployed models (read-only) | None |
-| **`PlatformDeployer`** (Java) | Deploy models somewhere other than Docker via MLflow, e.g. Kubernetes or KServe | n/a |
+| **Platform plugins** (Java): `CatalogSource`, `ArtifactLocator`, `PlatformDeployer` | Add another model platform (e.g. Kubeflow) or deploy somewhere other than Docker (e.g. KServe); see [section 8](#8-adding-a-model-platform) | n/a |
 
 The OpenAPI document is served at `/tmf-api/v3/api-docs`, and Swagger UI at `/tmf-api/swagger-ui.html`. Of the resources the specification defines, only `aiModel`, `aiModelSpecification` and `hub` are implemented (see [Limitations](#9-limitations)).
 
@@ -378,15 +378,57 @@ python3 scripts/mcp_interactive_lookup_client.py --base-url http://localhost:130
 
 ---
 
-## 8. Adding a serving platform
+## 8. Adding a model platform
+
+MLflow is the only platform today. A platform plugs in through three interfaces, each chosen at runtime; the controllers, the scheduler, the sync loop and the download endpoint stay as they are. A complete plugin, for example for Kubeflow, has:
+
+| Piece | Interface | Needed for | MLflow example |
+|---|---|---|---|
+| Catalog source | `catalog.CatalogSource` | Publishing the platform's models as specifications | `MlflowCatalogSource` (+ `MlflowSpecificationService` for the mapping) |
+| Artifact locator (+ store) | `artifacts.ArtifactLocator`, `artifacts.ArtifactStore` | Downloads (section 5) | `MlflowArtifactLocator`, `S3ArtifactStore` |
+| Deployer | `deployment.PlatformDeployer` | Deploying the models | `MlflowDeployer` |
+
+Downloads do not need a deployer, and deployment does not need a locator. All three select their models by the `platform` characteristic: the catalog source's `platform()` value.
+
+### 8.1 Catalog source
+
+```java
+public interface CatalogSource<T> {
+    String platform();                                        // "kubeflow": the platform characteristic
+    String artifactFormat();                                  // default format of its models, e.g. "onnx"
+    List<DiscoveredModel<T>> discover(Long createdAfterMs);   // null: all models
+    boolean hasArtifacts(DiscoveredModel<T> model);           // files stored yet?
+    AiModelSpecificationCreate toSpecification(DiscoveredModel<T> model) throws IOException;
+}
+
+record DiscoveredModel<T>(String key, String name, String version, long createdAtMs, T details) {}
+```
+
+Make it a bean, `@ConditionalOnProperty` on your platform's `…enabled` setting. `CatalogSyncService` runs every source on the schedule `aimodel.catalog.sync.interval-ms` and does the generic work, so the source only talks to its platform:
+
+- **`discover`:** with `null`, list all models; with a time, at least the models created after it (more is allowed). Fill `name` and `version` as the specification's: together they decide whether the model is already in the catalog. `key` must be unique within your source. Set `createdAtMs` if your platform can search by creation time; the sync then asks for new models only, and searches in full every `aimodel.catalog.sync.full-interval-ms`. Use `0` if it cannot. If an incremental search throws, the sync stops trying them and searches in full. `details` is yours: whatever `hasArtifacts` and `toSpecification` need.
+- **`hasArtifacts`:** `false` makes the sync skip the model and check again after 10 minutes.
+- **`toSpecification`:** name, version, description, `lifecycleStatus` and the characteristics your locator and deployer need (for example the artifact location). Do **not** add `platform`, `artifactFormat` or the download attachment: the sync adds them for every source. Set `artifactFormat` yourself only if a model's format differs from `artifactFormat()`. To honour a publisher's opt-out, set the characteristic `downloadable=false`, as the MLflow source does from the tag `downloadable`.
+
+The sync remembers which models it published, never creates one twice, processes newer models first, and logs and skips a model or source that fails.
+
+### 8.2 Downloads: artifact locator and store
+
+1. An `ArtifactLocator` bean: `supports(spec)` checks the `platform` characteristic; `locate(spec)` returns the files' location (a URI) and format. It must not read storage. `MlflowArtifactLocator` is the example.
+2. An `ArtifactStore` for the location's URI scheme, if it is not `s3://` (`S3ArtifactStore`): it lists the files under a location and opens one. Add your locations to `aimodel.artifacts.allowed-locations`.
+
+The endpoint, roles, allow-list, size and time limits, zip streaming, logging and the attachment on synced specifications are generic.
+
+### 8.3 Deployer
 
 Deployment is platform-agnostic. The lifecycle service and the scheduler handle states, dates, scheduling and restarts, and delegate the actual work to `PlatformDeployer` beans. MLflow-on-Docker (`MlflowDeployer`) is the only implementation today.
 
 ```java
 public interface PlatformDeployer {
-    boolean supports(AiModel model);                 // e.g. platform characteristic == "kserve"
-    void deploy(AiModel model) throws IOException;   // start serving, record endpoint, set ACTIVE
-    void undeploy(AiModel model);                    // stop serving and free resources
+    boolean supports(AiModel model);                                  // e.g. platform characteristic == "kserve"
+    List<Characteristic> deploy(AiModel model) throws IOException;    // start serving; return endpoint and IDs
+    void undeploy(AiModel model);                                     // stop serving and free resources
+    default void validateCharacteristics(List<Characteristic> c) {}   // reject client input with 400
 }
 ```
 
@@ -401,16 +443,8 @@ To add one, for example KServe:
    - If the model was stopped or deleted while you were deploying, the scheduler calls your `undeploy` with the returned characteristics instead, so nothing is left running.
    - **Throw** on failure, preferably a `DeploymentException` with a short, client-safe reason. The scheduler sets the model to `designed` and shows only that reason in `note`; the full exception goes to the server log.
 4. **`undeploy`:** release everything using the IDs you stored, after checking that they still belong to this model: characteristics in old rows may have been written by clients. `MlflowDeployer` does this with a container label (`tmf915.aiModelId`). Remove the deployment's characteristics from the model. Do not change the state; the caller sets `terminated`. Make it safe to call twice.
-5. **Specification fields:** if your platform needs extra fields in the specification, add them where specifications are created (see `MlflowSpecificationService`), or create specifications through `POST /aiModelSpecification`.
 
-No change to the controllers, lifecycle service or scheduler is needed. See `MlflowDeployer` for a complete example.
-
-**Downloads for your platform** (section 5) need two more pieces, both in package `artifacts`:
-
-1. An `ArtifactLocator` bean: `supports(spec)` checks the specification's `platform` characteristic; `locate(spec)` returns the files' location (a URI) and format. It must not read storage. `MlflowArtifactLocator` is the example.
-2. An `ArtifactStore` for the location's URI scheme, if it is not `s3://` (`S3ArtifactStore`): it lists the files under a location and opens one. Add the locations to `aimodel.artifacts.allowed-locations`.
-
-Where your specifications are created, set the characteristics `platform` and `artifactFormat`, and add the download attachment (`DownloadAttachments.create` with `ArtifactService.inspect`), as `MlflowSpecificationService` does. The endpoint, roles, allow-list, size and time limits, zip streaming and logging are generic.
+See `MlflowDeployer` for a complete example.
 
 ---
 

@@ -12,9 +12,13 @@ Client-visible changes. Releases are not tagged yet; everything below is on `mai
 
 ### Fixed
 
+- MLflow classic Model Registry: versions whose `source` is a full URI (for example `s3://mlflow/…`) were never catalogued, because the artifact check prefixed the bucket a second time (`s3://mlflow/s3://mlflow/…`) and always found nothing.
+
 - **`PATCH` erased lists the client did not send**, on both `aiModel` and `aiModelSpecification`. A PATCH of, say, `description` or `state` emptied `note` (including deployment failure reasons), `software`, `relatedParty`, `attachment`, `constraint` and every other list attribute that was left out. Now an omitted list is kept, a sent list replaces the stored one, and `[]` clears it. `serviceCharacteristic` and `specCharacteristic` still merge by `name`. Data already erased by earlier PATCHes cannot be restored by this fix.
 
 ### Changed
+
+- The catalog sync is now platform-neutral (`CatalogSyncService` with one `CatalogSource` per platform). For operators: its schedule settings are `aimodel.catalog.sync.interval-ms` and `aimodel.catalog.sync.full-interval-ms`; the old `mlflow.sync.interval-ms` and `mlflow.sync.full-interval-ms` are still read when the new ones are unset. Its log lines start with `Catalog sync (mlflow…)` instead of `MLflow sync`. API clients see no change.
 
 - `INTEGRATION_GUIDE.md`: sections 5 to 8 are now 6 to 9 (new section 5, "Using a model as a library").
 - The `mlflow.s3-endpoint-url`, `s3-access-key` and `s3-secret-key` settings in `application.yml` now take effect; before, only the `MLFLOW_S3_*` environment variables did. Environment variables still win.

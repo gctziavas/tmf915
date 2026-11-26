@@ -48,6 +48,28 @@ public final class ArtifactCharacteristics {
         return Optional.empty();
     }
 
+    /** A characteristic with one default string value. */
+    public static CharacteristicSpecification of(String name, String description, String value) {
+        CharacteristicValueSpecification v = new CharacteristicValueSpecification();
+        v.setValueType("string");
+        v.setValue(value);
+        v.setIsDefault(true);
+        CharacteristicSpecification c = new CharacteristicSpecification();
+        c.setName(name);
+        c.setDescription(description);
+        c.addCharacteristicValueSpecificationItem(v);
+        return c;
+    }
+
+    /** Adds the characteristic unless one with that name exists. */
+    public static void addIfAbsent(List<CharacteristicSpecification> characteristics,
+                                   String name, String description, String value) {
+        boolean present = characteristics.stream().anyMatch(c -> c != null && name.equals(c.getName()));
+        if (!present) {
+            characteristics.add(of(name, description, value));
+        }
+    }
+
     /** True if the characteristics opt the model out of downloads ({@code downloadable=false}). */
     public static boolean optedOut(List<CharacteristicSpecification> characteristics) {
         return value(characteristics, DOWNLOADABLE).map("false"::equalsIgnoreCase).orElse(false);
