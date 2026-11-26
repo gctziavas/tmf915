@@ -1,7 +1,13 @@
 package org.etsi.osl.controllers.tmf915.api;
 
+import org.etsi.osl.controllers.tmf915.artifacts.ArtifactNotAvailableException;
+import org.etsi.osl.controllers.tmf915.artifacts.ArtifactStorageException;
+import org.etsi.osl.controllers.tmf915.artifacts.ArtifactTooLargeException;
 import org.etsi.osl.controllers.tmf915.reposervices.ResourceNotFoundException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -17,6 +23,8 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 @RestControllerAdvice(basePackageClasses = ApiExceptionHandler.class)
 public class ApiExceptionHandler {
 
+    private static final Logger log = LoggerFactory.getLogger(ApiExceptionHandler.class);
+
     /** Unknown id on GET, PATCH or DELETE: 404. */
     @ExceptionHandler(ResourceNotFoundException.class)
     public ResponseEntity<String> notFound(ResourceNotFoundException ex) {
@@ -27,5 +35,31 @@ public class ApiExceptionHandler {
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<String> badRequest(IllegalArgumentException ex) {
         return ResponseEntity.badRequest().body(ex.getMessage());
+    }
+
+    // Model downloads. The content type is set explicitly: the request may have asked for
+    // application/zip, and the reason must not be labelled as a zip.
+
+    /** No downloadable artifact (or unknown id on the download endpoint): 404. */
+    @ExceptionHandler(ArtifactNotAvailableException.class)
+    public ResponseEntity<String> artifactNotAvailable(ArtifactNotAvailableException ex) {
+        return text(HttpStatus.NOT_FOUND, ex.getMessage());
+    }
+
+    /** Above aimodel.artifacts.max-download-bytes: 413. */
+    @ExceptionHandler(ArtifactTooLargeException.class)
+    public ResponseEntity<String> artifactTooLarge(ArtifactTooLargeException ex) {
+        return text(HttpStatus.CONTENT_TOO_LARGE, ex.getMessage());
+    }
+
+    /** Storage unreachable: 503. The cause (hosts, buckets) is logged, not returned. */
+    @ExceptionHandler(ArtifactStorageException.class)
+    public ResponseEntity<String> artifactStorage(ArtifactStorageException ex) {
+        log.warn("Artifact storage error: {}", ex.getCause() == null ? ex.getMessage() : ex.getCause().toString());
+        return text(HttpStatus.SERVICE_UNAVAILABLE, "Artifact storage is unavailable; try again later");
+    }
+
+    private static ResponseEntity<String> text(HttpStatus status, String body) {
+        return ResponseEntity.status(status).contentType(MediaType.TEXT_PLAIN).body(body);
     }
 }

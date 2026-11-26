@@ -117,8 +117,39 @@ And these `specCharacteristic` entries:
 | `metric_<key>`                              | Metrics whose name contains`accuracy`, `precision`, `recall`, `f1`, `auc`, `loss`, `mse`, `rmse`, `mae`, `r2` or `score`; others are not shown |
 | `tags`                                      | Logged-model tags as`key=value, …`                                                                                                            |
 | `model_file_exists`                         | Set to`true`/`false` after a deployment attempt                                                                                                |
+| `platform`, `artifactFormat`                | `mlflow` and `mlflow-model`: which platform the model comes from, and the format clients download it in                                         |
+| `downloadable`                              | Only if you set the tag `downloadable` (see below)                                                                                              |
 
 The catalog entry is created once and not updated afterwards. Changing params or tags on an existing logged model in MLflow does not change the catalog; log a new model instead.
+
+### Downloads, and how to opt out
+
+By default, any API user with `ROLE_USER` can download your model's files and load them in their own code (see the [integration guide](INTEGRATION_GUIDE.md#5-using-a-model-as-a-library)). The specification then has an `attachment` of `@type` `ModelArtifactAttachment` with the download link, the format and the size.
+
+**What they receive:** a zip of everything under the logged model's artifact URI: `MLmodel`, the model files, `requirements.txt`, `conda.yaml`, `python_env.yaml` and any input example. Anything else you save into the model's directory is included too, so keep credentials and private data out of it.
+
+**To keep a model from being downloaded** (licence, confidential weights), give it the tag `downloadable` = `false` **when you log it**:
+
+```python
+model_info = mlflow.sklearn.log_model(..., tags={"downloadable": "false"})
+```
+
+In the classic Model Registry, tag the version or the registered model (a version's tag wins):
+
+```python
+from mlflow import MlflowClient
+MlflowClient().set_registered_model_tag("churn", "downloadable", "false")
+```
+
+The tag is read when the catalog entry is created, about a minute after logging. For a model that is already in the catalog, set the characteristic on the specification instead:
+
+```bash
+curl -s -X PATCH -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"specCharacteristic":[{"name":"downloadable","characteristicValueSpecification":[{"value":"false","isDefault":true}]}]}' \
+  "http://localhost:13082/tmf-api/AiM/v4/aiModelSpecification/<SPEC_ID>"
+```
+
+The download then answers `404` with the reason, and the attachment disappears. Opting out does not affect deployment: the model can still be deployed and called through its endpoint.
 
 ## 4. Check that your model was published
 
@@ -180,4 +211,5 @@ To remove a version from the catalog: `DELETE /aiModelSpecification/<SPEC_ID>`. 
 | `inferencePayloadExample` contains `WARNING: Could not extract signature` | No signature was logged. Log the model again with`signature=` or `input_example=`.                                                                                                                                                                                     |
 | Deployment goes back to `designed`, note "Image build failed: model files not found" | Artifacts missing or unreadable in MinIO. Check the bucket in the MinIO console (http://localhost:9011). |
 | Deployment goes back to `designed`, note "Image build failed" | `mlflow models build-docker` could not build your environment, usually an unpinned or unavailable dependency. The note has a reference; the operator finds the build output in the server log with it. Or run `mlflow models build-docker -m <artifactUri> -n test` yourself, and pin versions with `pip_requirements=`. |
+| Specification has no `ModelArtifactAttachment`                            | The model opted out (`downloadable=false`); or its artifacts are outside the storage the API may read (`aimodel.artifacts.allowed-locations`, the `mlflow` bucket by default); or they are larger than `aimodel.artifacts.max-download-bytes`; or the API has no S3 settings. Models catalogued before downloads existed get the attachment after the API's next restart. |
 | Endpoint returns`400`                                                     | The request body doesn't match the signature. Start from`inferencePayloadExample` and replace the placeholder values.                                                                                                                                                  |

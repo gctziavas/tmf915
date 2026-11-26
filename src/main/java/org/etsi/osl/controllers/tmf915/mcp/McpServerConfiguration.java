@@ -23,7 +23,7 @@ public class McpServerConfiguration {
     public ToolCallbackProvider aiCatalogToolCallbacks(AiCatalogMcpTools aiCatalogMcpTools) {
         log.warn("MCP endpoints /tmf-api/sse and /tmf-api/mcp/** are NOT authenticated: anyone who can reach "
                 + "this port can list AI model specifications and deployed models. Restrict them at the network "
-                + "level (firewall or reverse proxy); see docs/INTEGRATION_GUIDE.md section 6.");
+                + "level (firewall or reverse proxy); see docs/INTEGRATION_GUIDE.md section 7.");
         return MethodToolCallbackProvider.builder()
                 .toolObjects(aiCatalogMcpTools)
                 .build();

@@ -17,8 +17,9 @@ flowchart LR
 
 - **Catalog:** discovers models in MLflow every minute and publishes each one as an `aiModelSpecification`.
 - **Deploy:** creating an `aiModel` in state `reserved` builds a serving image and starts a container; the model becomes `active` with an `endpoint` and an example request body.
+- **Download:** clients can download a catalogued model's files through the API (`GET /aiModelSpecification/{id}/artifacts`, a zip) and load them in their own code, without access to MLflow or MinIO. Publishers can opt a model out ([details](docs/INTEGRATION_GUIDE.md#5-using-a-model-as-a-library)).
 - **Lifecycle:** scheduled start and end dates, undeploy (`inactive`), delete, and recovery after a restart.
-- **Access:** REST API secured with Keycloak (OAuth 2.0), optional TMF Hub webhooks, and a read-only MCP server for AI agents. The MCP server has no authentication; keep it on a trusted network ([details](docs/INTEGRATION_GUIDE.md#6-mcp-server-for-ai-agents)).
+- **Access:** REST API secured with Keycloak (OAuth 2.0), optional TMF Hub webhooks, and a read-only MCP server for AI agents. The MCP server has no authentication; keep it on a trusted network ([details](docs/INTEGRATION_GUIDE.md#7-mcp-server-for-ai-agents)).
 
 Implemented TMF915 resources: `aiModel`, `aiModelSpecification` and the event subscription `hub`. The other resources in the specification (alarm, rule, monitor, topic, aiContract, …) return `501 Not Implemented`.
 

@@ -142,6 +142,16 @@ aimodel: # AIM915 model management configuration
     serving-base-url: ""
   specification:
     default-lifecycle-status: "Active"
+  artifacts: # Model downloads: GET /aiModelSpecification/{id}/artifacts (needs the S3 settings above)
+    # Storage locations downloads may read, comma-separated. Anything else is refused (404), also
+    # for specifications created with POST that point elsewhere. Whole path segments are matched.
+    allowed-locations: "s3://mlflow/"
+    max-download-bytes: 2147483648 # 2 GB; larger models are refused (413) and not advertised
+    # Longest time one download may take; then it is cut off, so slow clients do not hold
+    # connections and storage streams open.
+    download-timeout: 15m
+    # After startup, add the download attachment to downloadable specifications that lack it.
+    backfill-on-startup: true
 
 ---
 # ── Docker Compose profile ──────────────────────────────────────────

@@ -1,0 +1,210 @@
+# Model artifact access: feature plan
+
+Let clients download a catalogued model through the TMF 915 API and use it in their own code ("as a library"), instead of only calling a deployed endpoint. The design is platform-neutral: MLflow is the first platform, and Kubeflow or others can be added later without changing the API.
+
+This plan orders the work into pull requests and lists what must be decided first. It follows the working rules of [`BUG_FIX_PLAN.md`](BUG_FIX_PLAN.md).
+
+## Goal
+
+A client with a token can:
+
+1. Find a model in `GET /aiModelSpecification` and see whether it can be downloaded, in which format, and how big it is.
+2. Download it with `GET /aiModelSpecification/{id}/artifacts`, without access to MLflow, MinIO or storage credentials.
+3. Load it with the tool that matches the advertised format. For MLflow models that is `mlflow.pyfunc.load_model(<unzipped dir>)`.
+
+Adding a new model platform (for example Kubeflow) means writing a small platform-specific class, not changing the endpoint, security or clients.
+
+## Non-goals
+
+- **No format conversion.** The API delivers artifacts as the platform stored them, labelled with their format. Turning a PyTorch model into ONNX, say, is the publisher's job (see PR 4).
+- **No client SDK.** Clients use the loader of the advertised format.
+- **No upload through this endpoint.** Publishing stays with the platforms (MLflow today).
+
+## Current state (2026-11-26)
+
+- **Discovery:** each specification synced from MLflow carries the model's MLflow identity in `specCharacteristic`: `loggedModelId`, `artifactUri` (also in `modelDataSheet`), `modelType`, `runId`, `param_*`, `metric_*`. It is written by `MlflowSpecificationService`.
+- **Access today:** a client can load a model only by going around the API. It needs MLflow and MinIO network access and the shared S3 credentials, then calls `mlflow.pyfunc.load_model("models:/<loggedModelId>")`. The API's token, roles and audit do not apply.
+- **Storage:** `MlflowClientService` already holds a `MinioClient` (used by the sync's `hasArtifactsByUri`).
+- **TMF field:** `AiModelSpecification.attachment` (`AttachmentRefOrValue`: `href`, `attachmentType`, `mimeType`, `name`, `size`, `url`, `description`, `validFor`) exists in the TMF model and is unused.
+- **Platform coupling:** the catalog sync (`MlflowSyncService`) and the specification builder (`MlflowSpecificationService`) are MLflow-only. Deployment is already platform-neutral through `PlatformDeployer`.
+- **Roles:** the Keycloak realm has `ROLE_USER` and `ROLE_ADMIN`; the API checks `ROLE_USER`.
+
+## Design
+
+### What differs per platform, and what does not
+
+
+| Concern                                                   | Platform-specific?         | Example                                                                                                                             |
+| --------------------------------------------------------- | -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| Where a model's files are, and their format               | **Yes**                    | MLflow: the logged model's`artifact_uri`, format `mlflow-model`. Kubeflow Model Registry: the model artifact's URI and format name. |
+| Reading bytes from a location                             | **No: per storage scheme** | `s3://` is read the same way whoever wrote it; likewise `oci://`, `https://`.                                                       |
+| Endpoint, authentication, roles, audit, streaming, limits | **No**                     | One endpoint for all platforms.                                                                                                     |
+| How the client loads the files                            | **No, but advertised**     | The specification states the format; the client picks the loader.                                                                   |
+
+### Extension points
+
+Three small interfaces, chosen at runtime like `PlatformDeployer` is today:
+
+```
+GET /aiModelSpecification/{id}/artifacts            generic: auth, role, allow-list, zip streaming, audit
+        │
+        ▼
+ArtifactLocator     one per platform       spec → ModelArtifact(storage URI, format, file list, total size)
+  MlflowArtifactLocator        artifactUri characteristic, format "mlflow-model"
+  KubeflowArtifactLocator      (PR 3) Model Registry: model artifact URI + format name
+        │
+        ▼
+ArtifactStore       one per URI scheme     URI → list of files, and an InputStream per file
+  S3ArtifactStore              s3://  (reuses the MinIO client configuration)
+  OciArtifactStore, HttpArtifactStore  later, when a platform needs them
+
+CatalogSource       one per platform       (PR 2) lists the platform's models → specifications
+  MlflowCatalogSource          today's MlflowSyncService logic, behind the interface
+```
+
+
+| Interface         | Selected by                                                                        | Responsibility                                                                                                                                                                                                |
+| ----------------- | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ArtifactLocator` | `supports(AiModelSpecification)`, on the specification's `platform` characteristic | Resolve a specification to a`ModelArtifact` (`URI location`, `String format`, `List<ArtifactFile> files`, `long totalBytes`). No byte reading.                                                                |
+| `ArtifactStore`   | URI scheme                                                                         | List the files under a location and open a stream per file. No platform knowledge.                                                                                                                            |
+| `CatalogSource`   | configuration (`<platform>.enabled`)                                               | Discover models on its platform and produce`AiModelSpecificationCreate` objects, including the platform-neutral fields below. The scheduling, caching and back-off now in `MlflowSyncService` become generic. |
+
+A full platform plugin is then a `CatalogSource`, an `ArtifactLocator` and, if models should also be deployable, a `PlatformDeployer`.
+
+### Platform-neutral fields on a specification
+
+Written by every catalog source, read by the generic code:
+
+
+| Field                                      | Value                                                                                                                                                                                                           | Purpose                                                                                         |
+| ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `specCharacteristic` `platform`            | `mlflow`, `kubeflow`, …                                                                                                                                                                                        | Selects the locator (and matches the`platform` characteristic deployers already use).           |
+| `specCharacteristic` `artifactFormat`      | see the format table                                                                                                                                                                                            | What the files are.                                                                             |
+| `attachment` (one per downloadable format) | `href`: `/tmf-api/AiM/v4/aiModelSpecification/{id}/artifacts`; `attachmentType`: the format; `mimeType`: `application/zip`; `name`: `<spec name>-<version>.zip`; `size`: total bytes (`Quantity`, unit `bytes`) | The TMF-idiomatic way to advertise a downloadable artifact, so generic TMF clients can find it. |
+
+Existing MLflow specifications have no `platform` characteristic. `MlflowArtifactLocator` therefore also accepts specifications without `platform` that have `loggedModelId` and `artifactUri`. That fallback can be removed after a backfill.
+
+### Formats
+
+`artifactFormat` / `attachmentType` values, with the loader a client uses:
+
+
+| Format                                                         | Content                                                                | Client loads with                                                     |
+| -------------------------------------------------------------- | ---------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| `mlflow-model`                                                 | An MLflow model directory (`MLmodel`, environment files, flavor files) | `mlflow.pyfunc.load_model(dir)`; dependencies from `requirements.txt` |
+| `onnx`                                                         | An`.onnx` file                                                         | onnxruntime, in any language                                          |
+| others (e.g.`pytorch`, `tensorflow-savedmodel`, `huggingface`) | As the platform reports them                                           | The framework's own loader                                            |
+
+The table lives in `docs/INTEGRATION_GUIDE.md`. A new platform adds rows; it never changes existing meanings.
+
+### API contract
+
+- `GET /tmf-api/AiM/v4/aiModelSpecification/{id}/artifacts`
+  - `200`, `Content-Type: application/zip`, `Content-Disposition: attachment; filename="<name>-<version>.zip"`. The zip is streamed while it is read from storage, never held in memory or on disk.
+  - `404`: unknown specification, or no locator supports it. A specification that exists but has no downloadable artifact also gives `404`, with a reason.
+  - `403`: missing `ROLE_USER` (decision A1).
+  - `413`: larger than `aimodel.artifacts.max-download-bytes` (decision A4).
+- Optional: `?format=<format>` when a specification offers several formats (PR 4).
+- The JSON views (`GET` with `fields`, null exclusion, gzip) do not apply: it is a binary download. `application/zip` is not in `server.compression.mime-types`, which is right: a zip is already compressed.
+
+### Security
+
+1. **Storage allow-list (must have).** Clients can create specifications with `POST /aiModelSpecification`, with any `artifactUri`. Without a check, the endpoint would let any user read any object the server's S3 credentials can reach. `ArtifactStore` refuses locations outside `aimodel.artifacts.allowed-locations` (default: the MLflow bucket, `s3://mlflow/`), and the endpoint answers `404` (not `403`, so it does not confirm what exists). See also decision A5.
+2. **Role and opt-out (decisions A1, A3).** Any `ROLE_USER` may download; publishers who must not share weights (licence, value) set `downloadable=false`.
+3. **Executing a downloaded model runs its code.** Pickle and skops files execute on load. The API cannot make that safe; it can make who published what traceable. The endpoint logs each download at INFO: user (token subject), specification id, format and bytes. The integration guide states the risk.
+4. **Zip safety.** Entry names are the file paths relative to the artifact root, normalised. The endpoint rejects any path that is absolute or contains `..`, so a malicious artifact cannot produce a zip that writes outside the client's target directory.
+5. **No credentials leave the server.** Presigned URLs (decision A2) would expose MinIO to clients; streaming does not.
+
+## Decisions (made 2026-11-26)
+
+| #  | Decision | Options | Recommendation | **Decision** | Blocks |
+| -- | -------- | ------- | -------------- | ------------ | ------ |
+| A1 | Who may download | `ROLE_USER` (everyone with API access) / new realm role `ROLE_MODEL_DOWNLOAD` | New role. Weights can be valuable or licensed; metadata access should not imply them. | **`ROLE_USER`**, and the model's publisher can make a model non-downloadable (default: downloadable). No new realm role. | PR 1 |
+| A2 | Transport | Stream a zip through the API / return presigned S3 URLs | Stream. No MinIO exposure, one request, works for any `ArtifactStore`. | **Stream a zip**, and bound how long a download may keep a connection open (`aimodel.artifacts.download-timeout`). | PR 1 |
+| A3 | Which specifications are downloadable | All with a locator / only those marked downloadable | All with a locator, plus an opt-out characteristic `downloadable=false` set by publishers (e.g. an MLflow tag). | **As recommended** (same rule as A1). | PR 1 |
+| A4 | Size limit | None / configurable limit | `aimodel.artifacts.max-download-bytes`, default 2 GB; `413` above it. | **As recommended.** | PR 1 |
+| A5 | Specifications created by `POST /aiModelSpecification` | Downloadable if their location passes the allow-list / never downloadable | Allow-list only. | **As recommended.** | PR 1 |
+
+## Pull requests
+
+### PR 1: download endpoint for MLflow models, on the generic extension points — done, uncommitted (manual check against MLflow/MinIO pending)
+
+1. `ArtifactLocator`, `ArtifactStore`, `ModelArtifact`, `ArtifactFile` in a new package `artifacts/`, plus `ArtifactService`, which selects the locator and store and enforces the allow-list, opt-out and size limit.
+2. `S3ArtifactStore`: lists and streams objects with the MinIO client. Move the client construction out of `MlflowClientService` into an `S3Configuration` bean shared by both, so S3 access does not depend on MLflow classes.
+3. `MlflowArtifactLocator`: `artifactUri` → location; format `mlflow-model`; the legacy fallback for specifications without `platform`.
+4. Endpoint in `AiModelSpecificationApiController` (a TMF extension, documented as such), streaming with `StreamingResponseBody`, and errors through `ApiExceptionHandler`.
+5. `MlflowSpecificationService` writes `platform=mlflow`, `artifactFormat=mlflow-model` and the `attachment`. Size: sum of object sizes, read when the specification is created. Existing specifications: computed on the fly by the locator; the attachment is backfilled on first read, or by a one-off job.
+6. Opt-out (decisions A1, A3): no new role, the endpoint needs `ROLE_USER`. A specification with the characteristic `downloadable=false` is not downloadable (`404`) and advertises no attachment. MLflow publishers set it with the tag `downloadable=false`; anyone who can PATCH the specification can set it too.
+
+**Tests:**
+
+- `S3ArtifactStore` with a fake MinIO client: listing, streaming, refusing locations outside the allow-list.
+- Zip writer: entry names, refusal of `..`, streaming without buffering. A 50 MB fake artifact must not grow the heap by 50 MB; assert through a counting stream.
+- MockMvc: `200` with zip entries matching the files; `404` for an unknown id, for no locator, and for a location outside the allow-list; `403` without `ROLE_USER`; `413` above the limit; `downloadable=false` → `404`.
+- `MlflowSpecificationServiceUnitTest`: `platform`, `artifactFormat` and `attachment` are set.
+- Manual, needs MLflow and MinIO (the verification stack from PR 5 of the fix plan works): download the example model, unzip it, `mlflow.pyfunc.load_model`, predict.
+
+**Docs:**
+
+- `INTEGRATION_GUIDE.md`: new section "Using a model as a library", with the endpoint, formats table, security notes and a Python example.
+- `MODEL_PUBLISHING_GUIDE.md`: the `downloadable=false` opt-out and what consumers will receive.
+- `USER_GUIDE.md`: configuration (`aimodel.artifacts.*`) and who may download.
+- README: one line under "What it does".
+
+**Client-visible:** a new endpoint and new fields (`attachment`, `platform`, `artifactFormat`) on specifications. Nothing existing changes.
+
+**Progress** (ticked when the item's code, tests and docs are done and `mvn clean test` passes):
+
+- [x] 1. Extension points, `ArtifactService` (allow-list, opt-out, size limit) and the zip writer. Package `artifacts/`: `ArtifactLocator` (spec → `ArtifactLocation`: URI + format; no storage access), `ArtifactStore` (list + open, by URI scheme), `ArtifactFile`, `ModelArtifact`, `ArtifactPaths` (entry names; rejects absolute paths, drive letters and `..`, with `/` and `\\` both treated as separators), `ArtifactCharacteristics` (`platform`, `artifactFormat`, `downloadable`), `ArtifactZipWriter` (64 KB buffer, `BEST_SPEED`, stops at a deadline with `DownloadTimeoutException`, does not close the response stream) and `ArtifactService`. Difference from the design: listing is done by `ArtifactService` through the store, not by the locator, so locators never touch storage. The allow-list is checked in `ArtifactService` before any store is asked (same scheme and bucket, whole path segments, no `.`/`..`, query or fragment), so it holds for every store. Every "nothing to download" case gives the same message, except the publisher's opt-out, which says so. Storage errors are `ArtifactStorageException` (to be `503`). Tests: `ArtifactPathsTest`, `ArtifactZipWriterTest` (entries, unsafe and duplicate names, 50 MB of random data with less than 1 MB read ahead of what the client received, deadline), `ArtifactServiceTest` (opt-out, no locator, six disallowed locations never reach the store, segment matching, empty, unsafe path, storage error, size limit, `inspect`, `writeZip`). 350 tests passing.
+- [x] 2. `S3Configuration` and `S3ArtifactStore`. `artifacts.S3Configuration` creates the `MinioClient` and the `S3ArtifactStore` when an endpoint and both keys are set, independent of `mlflow.enabled`; `MlflowClientService` now takes the shared client (`ObjectProvider<MinioClient>`) instead of building its own. Settings read: `mlflow.s3.endpoint.url`/`access.key`/`secret.key` (what `MLFLOW_S3_*` environment variables set, as before) **or** `mlflow.s3-endpoint-url`/`s3-access-key`/`s3-secret-key`. The second form is what `application.yml` and `application-integration.yml` use, and was silently ignored before; it now takes effect. `S3ArtifactStore` lists recursively under `<path>/` (so `m-1` does not match `m-10`), skips directory markers, and refuses keys that are unsafe or not canonical (`//`, `./`, `\\`), so a zip entry name is always the object key itself. MinIO errors become `IOException`. Tests: `S3ArtifactStoreTest` (fake MinIO client: listing, prefix, empty, unsafe keys, list/read errors, streaming, a disallowed location never reaching MinIO, and when the beans are created). 360 tests passing.
+- [x] 3. `MlflowArtifactLocator` (`integrations/mlflow`). Supports `platform=mlflow` (any case), and specifications without `platform` that have `artifactUri` plus `loggedModelId` (logged models) or `modelVersion` (classic registry; the design named only logged models, but classic-registry specifications carry the same `artifactUri`). Location: `artifactUri`; format: `artifactFormat` if set, else `mlflow-model`. A missing or unparsable `artifactUri` gives the generic "no downloadable artifact". Not conditional on `mlflow.enabled`: it reads only the specification, so synced models stay downloadable with the MLflow integration off. Tests: `MlflowArtifactLocatorTest` (6). 366 tests passing.
+- [x] 4. Endpoint, error mapping and download time limit. `GET /aiModelSpecification/{id}/artifacts` in `AiModelSpecificationApiController` (`ROLE_USER`; documented in OpenAPI as a TMF 915 extension), returning a `StreamingResponseBody` with `Content-Type: application/zip` and `Content-Disposition: attachment; filename="<name>-<version>.zip"` (characters outside `[A-Za-z0-9._-]` become `_`). No `produces` restriction, so clients sending `Accept: application/json` still get the zip or a readable error. `ApiExceptionHandler`: `ArtifactNotAvailableException` → `404`, `ArtifactTooLargeException` → `413`, `ArtifactStorageException` → `503` (cause logged only), all `text/plain` so an error is never labelled as a zip. Unknown id on this endpoint is also `404` `text/plain`. **Time limit (A2):** `aimodel.artifacts.download-timeout` (default `15m`). The zip writer stops at that deadline and closes the storage stream; the request's own async timeout is set to the limit plus 30 s, per request, so `spring.mvc.async.request-timeout` (also used by the MCP SSE endpoint) is unchanged. A client that stops reading is cut off by Tomcat's write timeout. Each download is logged at INFO (user, specification, format, files, bytes, duration), failures at WARN. Tests: `ArtifactDownloadHttpTest` (real server, in-memory store, 1000-byte limit): `200` with the zip entries and headers, not gzipped; legacy spec without `platform`; `404` unknown id, no locator, outside the allow-list (store never asked), `downloadable=false` (with the reason); `413`; `403` without `ROLE_USER`; `401` without token. `ArtifactDownloadTimeoutHttpTest`: an 8 s download with a 1 s limit ends in under 6 s, truncated (or `500` if nothing had been sent yet). 376 tests passing.
+- [x] 5 + 6. `platform`, `artifactFormat`, `downloadable` and the `attachment` on synced specifications; backfill for existing ones. `MlflowSpecificationService` (logged models and classic registry) writes `platform=mlflow` and `artifactFormat=mlflow-model`, copies the MLflow tag `downloadable` into a `downloadable` characteristic (classic registry: the version's tag, else the registered model's), and, unless opted out, adds the attachment: `@type` `ModelArtifactAttachment` (`@baseType` `Attachment`, so it is told apart from client attachments), `attachmentType` = format, `mimeType` `application/zip`, `name` `<name>-<version>.zip`, `size` in `bytes` (TMF `Quantity.amount` is a float, so the exact byte count is also in `description`). Size comes from `ArtifactService.inspect`, which lists storage once at creation; no attachment if the model is not downloadable (outside the allow-list, no S3 settings, empty, above the limit). `href` is set by `AiModelSpecificationRepositoryService.normalize` once the id exists (new `DownloadAttachments.complete`), which also drops the attachment when `downloadable=false`. The attachment is server-owned on PATCH: kept when the PATCH omits `attachment` (the generated model turns an omitted list into an empty one, which used to wipe it), and a client-supplied copy is ignored and logged. **Existing specifications:** `DownloadAttachmentBackfill` runs once after startup in the background (`aimodel.artifacts.backfill-on-startup`, default `true`; skipped without S3 settings) and adds the attachment to downloadable specifications that have none, 100 per page; downloads work without it. It also restores the attachment after `downloadable=false` is removed (at the next restart). No realm change (decision A1). Tests: `MlflowSpecificationServiceUnitTest` (fields and attachment; tag opt-out without reading storage; not downloadable; classic registry with version/registered-model tags), `DownloadAttachmentsTest`, `DownloadAttachmentBackfillTest`, `AiModelSpecificationRepositoryServiceUnitTest` (href on create, PATCH keeps it and ignores client copies, `downloadable=false` removes it, `addDownloadAttachment`), `ArtifactDownloadHttpTest.backfill_advertisesTheDownloadInTheSpecification` (GET with `fields=attachment`). 391 tests passing.
+- [x] Docs and `CHANGELOG.md`. `INTEGRATION_GUIDE.md`: new section 5 "Using a model as a library" (finding downloadable models, the endpoint and its statuses, time limit and checking the zip, formats table, Python example, security notes), a row in the options table, the download statuses in section 3, a "Downloads for your platform" paragraph in "Adding a serving platform", a limitation. Old sections 5–8 are now 6–9; links updated in `USER_GUIDE.md`, `README.md`, this plan, and the MCP startup warning in `McpServerConfiguration` ("section 7"). Historical references in `BUG_FIX_PLAN.md` and `PERFORMANCE_HANDOFF.md` are left as they were. `MODEL_PUBLISHING_GUIDE.md` section 3: new characteristics, "Downloads, and how to opt out" (what consumers receive, `tags={"downloadable": "false"}` on `log_model`, registry tags, PATCH for catalogued models), a troubleshooting row. `USER_GUIDE.md`: download bullet in section 3; `aimodel.artifacts.*` and the S3 settings' two spellings in section 8; three troubleshooting rows. README: one line under "What it does". `application.yml`: the `aimodel.artifacts` block; `docker-compose.yml` passes `AIMODEL_ARTIFACTS_ALLOWED_LOCATIONS`, `_MAX_DOWNLOAD_BYTES`, `_DOWNLOAD_TIMEOUT` through (`docker compose config` validates). New `CHANGELOG.md` with an "Unreleased" section. 391 tests passing.
+- [ ] Manual check against MLflow and MinIO.
+
+### PR 2: extract `CatalogSource` from the MLflow sync
+
+1. `CatalogSource` interface: `List<DiscoveredModel> discover(since)`, `boolean hasArtifacts(DiscoveredModel)`, `AiModelSpecificationCreate toSpecification(DiscoveredModel)`.
+2. A generic `CatalogSyncService` keeps the scheduling, positive cache, missing-artifacts back-off and incremental/full search logic from `MlflowSyncService` (fix-plan Part 3 items 2 and 3) and runs every enabled source.
+3. `MlflowCatalogSource` holds the MLflow parts: the logged-models search, the classic-registry fallback and the specification mapping from `MlflowSpecificationService`.
+4. Setting the platform-neutral fields (`platform`, `artifactFormat`, `attachment`) moves into the generic service, so every source gets them.
+
+**Tests:** move `MlflowSyncServiceUnitTest`'s scenarios to `CatalogSyncService` with a fake source, and keep MLflow-specific mapping tests with `MlflowCatalogSource`.
+
+**Docs:** `INTEGRATION_GUIDE.md` section 8 ("Adding a serving platform") becomes "Adding a model platform": catalog source, artifact locator, deployer.
+
+**Client-visible:** none.
+
+### PR 3: Kubeflow (when needed)
+
+1. **Confirm before starting:** the Kubeflow Model Registry REST API version in use, how it exposes a model version's artifact URI and format, and which storage schemes it uses in your installation (S3 is covered by PR 1; `oci://` needs an `OciArtifactStore`; `pvc://` is not reachable from the API and would need a different approach).
+2. `KubeflowCatalogSource` and `KubeflowArtifactLocator`.
+3. An extra `ArtifactStore` only if step 1 shows a scheme other than `s3://`.
+4. Deployment: a `KubeflowDeployer` (KServe `InferenceService`) is a separate decision; downloads do not depend on it.
+
+**Tests:** against a recorded Model Registry response (fake HTTP), and a manual check against a real installation.
+
+### PR 4: portable formats (guidance first, code if needed)
+
+1. `MODEL_PUBLISHING_GUIDE.md`: how to also log an ONNX version of a model, and why (any language, no framework dependency).
+2. If publishers do that, the catalog source adds a second `attachment` (`onnx`), and the endpoint serves `?format=onnx`.
+
+## Verification of the whole feature
+
+On the verification stack (fix plan, PR 5 outcome), with the example model from `MODEL_PUBLISHING_GUIDE.md`:
+
+1. `GET /aiModelSpecification?fields=name,version,attachment` shows the attachment, with size and format.
+2. `GET /aiModelSpecification/{id}/artifacts` with a `ROLE_USER` token returns a zip of that size; without the role, `403`; with `downloadable=false`, `404`.
+3. In a clean Python environment: unzip, `pip install -r requirements.txt`, `mlflow.pyfunc.load_model(dir).predict(…)` returns the same predictions as the deployed endpoint for the same input.
+4. A specification created by POST with `artifactUri` outside the allow-list returns `404` on download.
+
+## Working rules
+
+As in [`BUG_FIX_PLAN.md`](BUG_FIX_PLAN.md):
+
+- Write the failing test first where an item says how to verify it.
+- `mvn clean test` green; the count only goes up.
+- Update the listed docs in the same PR, and mark the PR done here with a short outcome.
+- Collect client-visible changes in `CHANGELOG.md` under "Unreleased".
+- No commits or branches by the assistant; the owner commits.
