@@ -27,6 +27,7 @@ import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.context.request.async.AsyncWebRequest;
 import org.springframework.web.context.request.async.WebAsyncUtils;
 import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
@@ -34,6 +35,7 @@ import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBo
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
+import java.util.regex.Pattern;
 
 @Controller
 @RequestMapping("${openapi.aiManagement.base-path:/tmf-api/AiM/v4}")
@@ -47,6 +49,9 @@ public class AiModelSpecificationApiController implements AiModelSpecificationAp
      * writer's own deadline ends it first, cleanly.
      */
     static final Duration ASYNC_TIMEOUT_GRACE = Duration.ofSeconds(30);
+
+    /** Accepted {@code format} values: also keeps them safe in logs and file names. */
+    private static final Pattern FORMAT = Pattern.compile("[A-Za-z0-9._-]{1,64}");
 
     private final AiModelSpecificationRepositoryService service;
     private final ArtifactService artifactService;
@@ -105,19 +110,23 @@ public class AiModelSpecificationApiController implements AiModelSpecificationAp
     @Operation(
         operationId = "downloadAiModelSpecificationArtifacts",
         summary = "Downloads the model files of an AiModelSpecification (TMF 915 extension)",
-        description = "Streams the model's files as a zip, in the format given by the specification's "
-                + "artifactFormat characteristic (e.g. mlflow-model: load with mlflow.pyfunc.load_model "
-                + "on the unzipped directory). Not part of TMF 915. Downloadable specifications advertise "
-                + "this endpoint in an attachment of @type ModelArtifactAttachment, with its size.",
+        description = "Streams the model's files as a zip. Without format: the specification's primary "
+                + "format, its artifactFormat characteristic (e.g. mlflow-model: load with "
+                + "mlflow.pyfunc.load_model on the unzipped directory). With format: another format the "
+                + "specification offers, e.g. onnx. Not part of TMF 915. Each downloadable format is "
+                + "advertised in an attachment of @type ModelArtifactAttachment, with its href and size.",
         tags = { "aiModelSpecification" },
         responses = {
             @ApiResponse(responseCode = "200", description = "The model files as a zip", content = {
                 @Content(mediaType = "application/zip", schema = @Schema(type = "string", format = "binary"))
             }),
+            @ApiResponse(responseCode = "400", description = "Malformed format parameter", content = {
+                @Content(mediaType = "text/plain", schema = @Schema(type = "string"))
+            }),
             @ApiResponse(responseCode = "401", description = "Unauthorized"),
             @ApiResponse(responseCode = "403", description = "Forbidden: ROLE_USER required"),
-            @ApiResponse(responseCode = "404", description = "Unknown id, or the specification has no "
-                    + "downloadable artifact (including downloadable=false)", content = {
+            @ApiResponse(responseCode = "404", description = "Unknown id, the specification has no "
+                    + "downloadable artifact (including downloadable=false), or not in that format", content = {
                 @Content(mediaType = "text/plain", schema = @Schema(type = "string"))
             }),
             @ApiResponse(responseCode = "413", description = "Above aimodel.artifacts.max-download-bytes", content = {
@@ -133,18 +142,24 @@ public class AiModelSpecificationApiController implements AiModelSpecificationAp
     public ResponseEntity<StreamingResponseBody> downloadAiModelSpecificationArtifacts(
             @Parameter(name = "id", description = "Identifier of the AiModelSpecification", required = true)
             @PathVariable("id") String id,
+            @Parameter(name = "format", description = "A format the specification offers (an attachmentType of "
+                    + "its ModelArtifactAttachments), e.g. onnx. Default: its primary format.")
+            @RequestParam(value = "format", required = false) String format,
             HttpServletRequest request) {
+        if (format != null && !FORMAT.matcher(format).matches()) {
+            throw new IllegalArgumentException("Invalid format: use letters, digits, '.', '_' or '-' (at most 64)");
+        }
         AiModelSpecification specification = service.findAiModelSpecificationById(id);
         if (specification == null) {
             throw new ArtifactNotAvailableException("No AiModelSpecification with ID: " + id);
         }
-        ModelArtifact artifact = artifactService.resolve(specification);
+        ModelArtifact artifact = artifactService.resolve(specification, format);
 
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         String user = authentication == null ? "anonymous" : authentication.getName();
         limitRequestTime(request, artifactService.downloadTimeout().plus(ASYNC_TIMEOUT_GRACE));
 
-        String fileName = DownloadAttachments.fileName(specification.getName(), specification.getVersion());
+        String fileName = DownloadAttachments.fileName(specification.getName(), specification.getVersion(), format);
         StreamingResponseBody body = out -> artifactService.writeZip(id, user, artifact, out);
         return ResponseEntity.ok()
                 .contentType(MediaType.parseMediaType(DownloadAttachments.MIME_TYPE))

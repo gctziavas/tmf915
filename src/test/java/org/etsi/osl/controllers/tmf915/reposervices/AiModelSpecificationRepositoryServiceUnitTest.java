@@ -234,7 +234,7 @@ class AiModelSpecificationRepositoryServiceUnitTest {
 
         AiModelSpecification created = service.createAiModelSpecification(create);
 
-        assertEquals(java.net.URI.create("/tmf-api/AiM/v4/aiModelSpecification/" + created.getId() + "/artifacts"),
+        assertEquals(java.net.URI.create("/tmf-api/AiM/v4/aiModelSpecification/" + created.getId() + "/artifacts?format=mlflow-model"),
                 created.getAttachment().get(0).getHref());
     }
 
@@ -291,20 +291,40 @@ class AiModelSpecificationRepositoryServiceUnitTest {
     }
 
     @Test
-    void addDownloadAttachment_onlyWhenMissing() {
+    void addDownloadAttachments_onlyWhenMissing() {
         AiModelSpecification stored = new AiModelSpecification();
         stored.setId("spec-1");
         stored.setName("iris");
         stored.setVersion("1");
         when(aiModelSpecificationRepository.findById("spec-1")).thenReturn(Optional.of(stored));
 
-        assertTrue(service.addDownloadAttachment("spec-1", ARTIFACT));
-        assertEquals(java.net.URI.create("/tmf-api/AiM/v4/aiModelSpecification/spec-1/artifacts"),
+        assertTrue(service.addDownloadAttachments("spec-1", List.of(ARTIFACT)));
+        assertEquals(java.net.URI.create("/tmf-api/AiM/v4/aiModelSpecification/spec-1/artifacts?format=mlflow-model"),
                 stored.getAttachment().get(0).getHref());
-        assertFalse(service.addDownloadAttachment("spec-1", ARTIFACT));
+        assertFalse(service.addDownloadAttachments("spec-1", List.of(ARTIFACT)));
         verify(aiModelSpecificationRepository, times(1)).save(stored);
 
         when(aiModelSpecificationRepository.findById("gone")).thenReturn(Optional.empty());
-        assertFalse(service.addDownloadAttachment("gone", ARTIFACT));
+        assertFalse(service.addDownloadAttachments("gone", List.of(ARTIFACT)));
+    }
+
+    @Test
+    void patch_keepsEveryFormatsDownloadAttachment() {
+        org.etsi.osl.controllers.tmf915.model.AttachmentRefOrValue onnx =
+                org.etsi.osl.controllers.tmf915.artifacts.DownloadAttachments.create("iris", "1",
+                        new org.etsi.osl.controllers.tmf915.artifacts.ModelArtifact(java.net.URI.create("s3://mlflow/x/extra_files"),
+                                "onnx", List.of(new org.etsi.osl.controllers.tmf915.artifacts.ArtifactFile("model.onnx", 4)), 4));
+        AiModelSpecification stored = new AiModelSpecification();
+        stored.setId("spec-1");
+        stored.setAttachment(new java.util.ArrayList<>(List.of(datasheet(), download(), onnx)));
+        when(aiModelSpecificationRepository.findById("spec-1")).thenReturn(Optional.of(stored));
+        when(aiModelSpecificationRepository.save(any(AiModelSpecification.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        AiModelSpecificationUpdate update = new AiModelSpecificationUpdate();
+        update.setAttachment(new java.util.ArrayList<>());
+        AiModelSpecification patched = service.updateAiModelSpecification("spec-1", update);
+
+        assertEquals(List.of("mlflow-model", "onnx"), patched.getAttachment().stream()
+                .map(org.etsi.osl.controllers.tmf915.model.AttachmentRefOrValue::getAttachmentType).toList());
     }
 }

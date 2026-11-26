@@ -41,7 +41,7 @@ class DownloadAttachmentsTest {
 
         DownloadAttachments.complete(spec);
 
-        assertEquals(URI.create("/tmf-api/AiM/v4/aiModelSpecification/abc/artifacts"),
+        assertEquals(URI.create("/tmf-api/AiM/v4/aiModelSpecification/abc/artifacts?format=mlflow-model"),
                 DownloadAttachments.find(spec.getAttachment()).orElseThrow().getHref());
         assertEquals(null, spec.getAttachment().get(0).getHref(), "other attachments are left alone");
     }
@@ -61,5 +61,42 @@ class DownloadAttachmentsTest {
         AiModelSpecification spec = new AiModelSpecification();
         DownloadAttachments.complete(spec);
         assertTrue(spec.getAttachment().isEmpty());
+    }
+
+    @Test
+    void fileName_withFormat() {
+        assertEquals("iris-m-1-onnx.zip", DownloadAttachments.fileName("iris", "m-1", "onnx"));
+        assertEquals("iris-m-1.zip", DownloadAttachments.fileName("iris", "m-1", null));
+    }
+
+    @Test
+    void complete_givesEachFormatItsOwnHrefAndName() {
+        AiModelSpecification spec = spec("abc", false);
+        spec.setName("iris v2");
+        spec.setVersion("m-1");
+        ModelArtifact onnx = new ModelArtifact(URI.create("s3://mlflow/x/extra_files"), "onnx",
+                List.of(new ArtifactFile("model.onnx", 4)), 4);
+        spec.getAttachment().add(DownloadAttachments.create("old name", "1", onnx));
+
+        DownloadAttachments.complete(spec);
+
+        List<AttachmentRefOrValue> downloads = DownloadAttachments.findAll(spec.getAttachment());
+        assertEquals(2, downloads.size());
+        assertEquals(URI.create("/tmf-api/AiM/v4/aiModelSpecification/abc/artifacts?format=mlflow-model"), downloads.get(0).getHref());
+        assertEquals("iris_v2-m-1-mlflow-model.zip", downloads.get(0).getName());
+        assertEquals(URI.create("/tmf-api/AiM/v4/aiModelSpecification/abc/artifacts?format=onnx"), downloads.get(1).getHref());
+        assertEquals("iris_v2-m-1-onnx.zip", downloads.get(1).getName());
+    }
+
+    @Test
+    void complete_onOptOut_removesEveryFormat() {
+        AiModelSpecification spec = spec("abc", true);
+        spec.getAttachment().add(DownloadAttachments.create("iris", "1", new ModelArtifact(URI.create("s3://mlflow/x"),
+                "onnx", List.of(new ArtifactFile("model.onnx", 4)), 4)));
+
+        DownloadAttachments.complete(spec);
+
+        assertTrue(DownloadAttachments.findAll(spec.getAttachment()).isEmpty());
+        assertEquals(1, spec.getAttachment().size());
     }
 }

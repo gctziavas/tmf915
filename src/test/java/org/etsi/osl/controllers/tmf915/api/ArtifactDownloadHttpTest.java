@@ -57,6 +57,7 @@ class ArtifactDownloadHttpTest {
     private static final String LOCATION = "s3://mlflow/1/models/m-1/artifacts";
     private static final byte[] MLMODEL = "artifact_path: model\nflavors: {}\n".getBytes(StandardCharsets.UTF_8);
     private static final byte[] PICKLE = {(byte) 0x80, 5, 'K', 1, '.'};
+    private static final byte[] ONNX = {8, 7, 18, 4, 'o', 'n', 'n', 'x'};
 
     @LocalServerPort
     private int port;
@@ -91,6 +92,8 @@ class ArtifactDownloadHttpTest {
                 .put(LOCATION, "model/model.pkl", PICKLE)
                 .put("s3://other-bucket/secrets", "dump.sql", new byte[]{1});
         store.put("s3://mlflow/big", "weights.bin", new byte[2000]);
+        // An ONNX copy logged with extra_files=["model.onnx"], next to another extra file.
+        store.put(LOCATION + "/extra_files", "model.onnx", ONNX).put(LOCATION + "/extra_files", "notes.txt", new byte[]{1});
     }
 
     private String create(String... characteristics) {
@@ -111,8 +114,12 @@ class ArtifactDownloadHttpTest {
     }
 
     private HttpResponse<byte[]> download(String id, String token, String accept) throws Exception {
+        return download(id, "", token, accept);
+    }
+
+    private HttpResponse<byte[]> download(String id, String query, String token, String accept) throws Exception {
         HttpRequest.Builder request = HttpRequest.newBuilder(
-                URI.create("http://localhost:" + port + "/tmf-api/AiM/v4/aiModelSpecification/" + id + "/artifacts"));
+                URI.create("http://localhost:" + port + "/tmf-api/AiM/v4/aiModelSpecification/" + id + "/artifacts" + query));
         if (token != null) {
             request.header("Authorization", "Bearer " + token);
         }
@@ -149,7 +156,8 @@ class ArtifactDownloadHttpTest {
         assertTrue(disposition.startsWith("attachment;") && disposition.contains("iris_classifier-m-1.zip"), disposition);
         assertTrue(response.headers().firstValue("Content-Encoding").isEmpty(), "a zip is not gzipped again");
         Map<String, byte[]> entries = unzip(response.body());
-        assertEquals(List.of("MLmodel", "model/model.pkl"), List.copyOf(entries.keySet()));
+        assertEquals(List.of("MLmodel", "model/model.pkl", "extra_files/model.onnx", "extra_files/notes.txt"),
+                List.copyOf(entries.keySet()));
         assertArrayEquals(MLMODEL, entries.get("MLmodel"));
         assertArrayEquals(PICKLE, entries.get("model/model.pkl"));
     }
@@ -241,14 +249,70 @@ class ArtifactDownloadHttpTest {
                 .header("Authorization", "Bearer user").GET().build(), HttpResponse.BodyHandlers.ofString());
         assertEquals(200, response.statusCode());
         String json = response.body();
-        assertTrue(json.contains("\"href\":\"/tmf-api/AiM/v4/aiModelSpecification/" + downloadable + "/artifacts\""), json);
+        assertTrue(json.contains("\"href\":\"/tmf-api/AiM/v4/aiModelSpecification/" + downloadable + "/artifacts?format=mlflow-model\""), json);
         assertTrue(json.contains("\"@type\":\"ModelArtifactAttachment\""), json);
         assertTrue(json.contains("\"attachmentType\":\"mlflow-model\""), json);
         assertTrue(json.contains("\"mimeType\":\"application/zip\""), json);
         assertTrue(json.contains("\"units\":\"bytes\""), json);
-        assertTrue(json.contains("\"name\":\"iris_classifier-m-1.zip\""), json);
+        assertTrue(json.contains("\"name\":\"iris_classifier-m-1-mlflow-model.zip\""), json);
+        // The ONNX copy is a second attachment, with its own link and size.
+        assertTrue(json.contains("\"href\":\"/tmf-api/AiM/v4/aiModelSpecification/" + downloadable + "/artifacts?format=onnx\""), json);
+        assertTrue(json.contains("\"attachmentType\":\"onnx\""), json);
+        assertTrue(json.contains("\"name\":\"iris_classifier-m-1-onnx.zip\""), json);
+        assertTrue(json.contains("\"amount\":8.0"), json);
 
         assertTrue(specifications.findAiModelSpecificationById(optedOut).getAttachment().isEmpty());
         assertTrue(specifications.findAiModelSpecificationById(outside).getAttachment().isEmpty());
+    }
+
+    // ── Formats ──────────────────────────────────────────────────────────
+
+    @Test
+    void formatOnnx_downloadsOnlyTheOnnxFile() throws Exception {
+        String id = create("platform", "mlflow", "artifactUri", LOCATION);
+
+        HttpResponse<byte[]> response = download(id, "?format=onnx", "user", null);
+
+        assertEquals(200, response.statusCode(), text(response));
+        assertTrue(response.headers().firstValue("Content-Disposition").orElseThrow().contains("iris_classifier-m-1-onnx.zip"));
+        Map<String, byte[]> entries = unzip(response.body());
+        assertEquals(List.of("model.onnx"), List.copyOf(entries.keySet()));
+        assertArrayEquals(ONNX, entries.get("model.onnx"));
+    }
+
+    @Test
+    void namedPrimaryFormat_isTheSameAsNoFormat() throws Exception {
+        String id = create("platform", "mlflow", "artifactUri", LOCATION);
+        HttpResponse<byte[]> response = download(id, "?format=mlflow-model", "user", null);
+        assertEquals(200, response.statusCode());
+        assertEquals(4, unzip(response.body()).size());
+    }
+
+    @Test
+    void formatNotOffered_is404_withTheReason() throws Exception {
+        String id = create("platform", "mlflow", "artifactUri", LOCATION);
+        HttpResponse<byte[]> response = download(id, "?format=pytorch", "user", null);
+        assertEquals(404, response.statusCode());
+        assertEquals("AiModelSpecification " + id + " has no download in format pytorch", text(response));
+
+        // Offered by the locator, but this model has no ONNX copy.
+        String withoutOnnx = create("platform", "mlflow", "artifactUri", "s3://mlflow/big");
+        HttpResponse<byte[]> missing = download(withoutOnnx, "?format=onnx", "user", null);
+        assertEquals(404, missing.statusCode());
+        assertTrue(text(missing).contains("has no download in format onnx"), text(missing));
+    }
+
+    @Test
+    void malformedFormat_is400() throws Exception {
+        String id = create("platform", "mlflow", "artifactUri", LOCATION);
+        HttpResponse<byte[]> response = download(id, "?format=..%2Fsecret", "user", null);
+        assertEquals(400, response.statusCode());
+        assertTrue(text(response).contains("Invalid format"), text(response));
+    }
+
+    @Test
+    void optedOut_isNotDownloadableInAnyFormat() throws Exception {
+        String id = create("platform", "mlflow", "artifactUri", LOCATION, "downloadable", "false");
+        assertEquals(404, download(id, "?format=onnx", "user", null).statusCode());
     }
 }

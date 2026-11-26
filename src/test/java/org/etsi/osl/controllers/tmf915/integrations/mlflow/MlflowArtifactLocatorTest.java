@@ -39,13 +39,13 @@ class MlflowArtifactLocatorTest {
         AiModelSpecification spec = spec("platform", "mlflow", "artifactUri", URI_);
 
         assertTrue(locator.supports(spec));
-        assertEquals(new ArtifactLocation(URI.create(URI_), "mlflow-model"), locator.locate(spec));
+        assertEquals(new ArtifactLocation(URI.create(URI_), "mlflow-model"), locator.locate(spec).get(0));
     }
 
     @Test
     void artifactFormatCharacteristic_overridesTheDefaultFormat() {
         AiModelSpecification spec = spec("platform", "MLflow", "artifactUri", URI_, "artifactFormat", "onnx");
-        assertEquals("onnx", locator.locate(spec).format());
+        assertEquals("onnx", locator.locate(spec).get(0).format());
     }
 
     @Test
@@ -71,5 +71,20 @@ class MlflowArtifactLocatorTest {
         assertThrows(ArtifactNotAvailableException.class, () -> locator.locate(spec("platform", "mlflow")));
         assertThrows(ArtifactNotAvailableException.class,
                 () -> locator.locate(spec("platform", "mlflow", "artifactUri", "s3://mlflow/a b|c")));
+    }
+
+    @Test
+    void offersOnnx_fromExtraFiles_asASecondFormat() {
+        java.util.List<ArtifactLocation> locations = locator.locate(spec("platform", "mlflow", "artifactUri", URI_ + "/"));
+
+        assertEquals(2, locations.size());
+        assertEquals(new ArtifactLocation(URI.create(URI_ + "/"), "mlflow-model"), locations.get(0));
+        assertEquals(new ArtifactLocation(URI.create(URI_ + "/extra_files"), "onnx", java.util.List.of("model.onnx")),
+                locations.get(1));
+    }
+
+    @Test
+    void anOnnxPrimary_isNotOfferedTwice() {
+        assertEquals(1, locator.locate(spec("platform", "mlflow", "artifactUri", URI_, "artifactFormat", "onnx")).size());
     }
 }

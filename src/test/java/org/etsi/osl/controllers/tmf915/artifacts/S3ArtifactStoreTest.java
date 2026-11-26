@@ -141,8 +141,8 @@ class S3ArtifactStoreTest {
             }
 
             @Override
-            public ArtifactLocation locate(org.etsi.osl.controllers.tmf915.model.AiModelSpecification s) {
-                return new ArtifactLocation(URI.create("s3://backups/db-dump"), "mlflow-model");
+            public List<ArtifactLocation> locate(org.etsi.osl.controllers.tmf915.model.AiModelSpecification s) {
+                return List.of(new ArtifactLocation(URI.create("s3://backups/db-dump"), "mlflow-model"));
             }
         };
         ArtifactService service = new ArtifactService(List.of(locator), List.of(store), List.of("s3://mlflow/"),

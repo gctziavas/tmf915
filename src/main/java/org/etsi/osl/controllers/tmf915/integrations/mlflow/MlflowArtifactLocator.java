@@ -13,7 +13,9 @@ import java.util.List;
 
 /**
  * Locates MLflow models: the {@code artifactUri} characteristic is the MLflow model directory,
- * format {@code mlflow-model}.
+ * format {@code mlflow-model} (the primary format). If the publisher logged an ONNX copy with
+ * {@code log_model(..., extra_files=["model.onnx"])}, MLflow stores it as
+ * {@code extra_files/model.onnx}, and the model is offered as {@code onnx} too: that one file.
  *
  * <p>Handles specifications with {@code platform=mlflow}, and, for specifications synced before
  * the {@code platform} characteristic existed, those without {@code platform} that carry
@@ -29,6 +31,10 @@ public class MlflowArtifactLocator implements ArtifactLocator {
     public static final String PLATFORM = "mlflow";
     public static final String FORMAT = "mlflow-model";
     static final String ARTIFACT_URI = "artifactUri";
+    public static final String ONNX_FORMAT = "onnx";
+    /** Where MLflow puts {@code extra_files}, relative to the model directory. */
+    static final String EXTRA_FILES_DIRECTORY = "extra_files";
+    static final String ONNX_FILE = "model.onnx";
 
     @Override
     public boolean supports(AiModelSpecification specification) {
@@ -45,7 +51,7 @@ public class MlflowArtifactLocator implements ArtifactLocator {
     }
 
     @Override
-    public ArtifactLocation locate(AiModelSpecification specification) {
+    public List<ArtifactLocation> locate(AiModelSpecification specification) {
         List<CharacteristicSpecification> c = specification.getSpecCharacteristic();
         String uri = ArtifactCharacteristics.value(c, ARTIFACT_URI).filter(s -> !s.isEmpty())
                 .orElseThrow(() -> noArtifact(specification));
@@ -58,7 +64,14 @@ public class MlflowArtifactLocator implements ArtifactLocator {
         String format = ArtifactCharacteristics.value(c, ArtifactCharacteristics.ARTIFACT_FORMAT)
                 .filter(s -> !s.isEmpty())
                 .orElse(FORMAT);
-        return new ArtifactLocation(location, format);
+        ArtifactLocation primary = new ArtifactLocation(location, format);
+        if (ONNX_FORMAT.equals(format)) {
+            return List.of(primary);
+        }
+        String root = uri.endsWith("/") ? uri.substring(0, uri.length() - 1) : uri;
+        ArtifactLocation onnx = new ArtifactLocation(URI.create(root + "/" + EXTRA_FILES_DIRECTORY),
+                ONNX_FORMAT, List.of(ONNX_FILE));
+        return List.of(primary, onnx);
     }
 
     private static ArtifactNotAvailableException noArtifact(AiModelSpecification specification) {

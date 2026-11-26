@@ -11,7 +11,6 @@ import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
-import java.util.Optional;
 
 /**
  * Once after startup, in the background: adds the download attachment to downloadable
@@ -61,8 +60,8 @@ public class DownloadAttachmentBackfill {
                 if (DownloadAttachments.find(spec.getAttachment()).isPresent()) {
                     continue;
                 }
-                Optional<ModelArtifact> artifact = artifactService.describe(spec);
-                if (artifact.isPresent() && specifications.addDownloadAttachment(spec.getId(), artifact.get())) {
+                List<ModelArtifact> artifacts = artifactService.describeAll(spec);
+                if (!artifacts.isEmpty() && specifications.addDownloadAttachments(spec.getId(), artifacts)) {
                     added++;
                 }
             }

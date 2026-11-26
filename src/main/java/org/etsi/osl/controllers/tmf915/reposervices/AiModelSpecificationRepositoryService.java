@@ -17,7 +17,6 @@ import org.springframework.transaction.annotation.Transactional;
 import java.net.URI;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -85,26 +84,28 @@ public class AiModelSpecificationRepositoryService {
         log.info("AiModelSpecification UPDATE with ID: {}", id);
         AiModelSpecification existing = aiModelSpecificationRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("No AiModelSpecification with ID: " + id));
-        Optional<AttachmentRefOrValue> download = DownloadAttachments.find(existing.getAttachment());
+        List<AttachmentRefOrValue> downloads = DownloadAttachments.findAll(existing.getAttachment());
         AiModelSpecificationMapper.applyUpdate(existing, aiModelSpecUpdate);
-        keepDownloadAttachment(existing, download);
+        keepDownloadAttachments(existing, downloads);
         normalize(existing);
         return normalize(aiModelSpecificationRepository.save(existing));
     }
 
     /**
-     * Adds the download attachment to a stored specification that has none (backfill for rows
-     * synced before downloads existed).
+     * Adds download attachments, one per format, to a stored specification that has none
+     * (backfill for rows synced before downloads existed).
      *
-     * @return false if the specification is gone or already has one
+     * @return false if the specification is gone, already has one, or there is nothing to add
      */
-    public boolean addDownloadAttachment(String id, ModelArtifact artifact) {
+    public boolean addDownloadAttachments(String id, List<ModelArtifact> artifacts) {
         AiModelSpecification spec = aiModelSpecificationRepository.findById(id).orElse(null);
-        if (spec == null || DownloadAttachments.find(spec.getAttachment()).isPresent()) {
+        if (spec == null || artifacts.isEmpty() || DownloadAttachments.find(spec.getAttachment()).isPresent()) {
             return false;
         }
         List<AttachmentRefOrValue> attachments = new ArrayList<>(spec.getAttachment() == null ? List.of() : spec.getAttachment());
-        attachments.add(DownloadAttachments.create(spec.getName(), spec.getVersion(), artifact));
+        for (ModelArtifact artifact : artifacts) {
+            attachments.add(DownloadAttachments.create(spec.getName(), spec.getVersion(), artifact));
+        }
         spec.setAttachment(attachments);
         normalize(spec);
         aiModelSpecificationRepository.save(spec);
@@ -112,11 +113,11 @@ public class AiModelSpecificationRepositoryService {
     }
 
     /**
-     * The download attachment is server-owned: a PATCH can neither remove nor replace it (it
-     * goes only when the specification opts out with {@code downloadable=false}). A PATCH that
-     * sends {@code attachment} replaces the client's attachments, but this one is put back.
+     * The download attachments are server-owned: a PATCH can neither remove nor replace them
+     * (they go only when the specification opts out with {@code downloadable=false}). A PATCH
+     * that sends {@code attachment} replaces the client's attachments; these are put back.
      */
-    private static void keepDownloadAttachment(AiModelSpecification spec, Optional<AttachmentRefOrValue> stored) {
+    private static void keepDownloadAttachments(AiModelSpecification spec, List<AttachmentRefOrValue> stored) {
         List<AttachmentRefOrValue> attachments = new ArrayList<>(spec.getAttachment() == null ? List.of() : spec.getAttachment());
         int before = attachments.size();
         attachments.removeIf(DownloadAttachments::isDownloadAttachment);
@@ -124,7 +125,7 @@ public class AiModelSpecificationRepositoryService {
             log.info("AiModelSpecification {}: ignored client-supplied {} attachment (server-owned)",
                     spec.getId(), DownloadAttachments.TYPE);
         }
-        stored.ifPresent(attachments::add);
+        attachments.addAll(stored);
         spec.setAttachment(attachments);
     }
 

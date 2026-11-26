@@ -28,7 +28,9 @@ class CatalogSyncAttachmentTest {
             return new InMemoryArtifactStore()
                     .put("s3://mlflow/1/models/m-1/artifacts", "MLmodel", new byte[100])
                     .put("s3://mlflow/1/models/m-1/artifacts", "model.pkl", new byte[1900])
-                    .put("s3://elsewhere/m-1", "model.pkl", new byte[10]);
+                    .put("s3://elsewhere/m-1", "model.pkl", new byte[10])
+                    .put("s3://mlflow/1/models/m-2/artifacts", "MLmodel", new byte[100])
+                    .put("s3://mlflow/1/models/m-2/artifacts/extra_files", "model.onnx", new byte[40]);
         }
     }
 
@@ -68,5 +70,16 @@ class CatalogSyncAttachmentTest {
         assertTrue(specification("s3://mlflow/1/models/m-1/artifacts", "false").getAttachment().isEmpty());
         assertTrue(specification("s3://elsewhere/m-1", null).getAttachment().isEmpty());
         assertTrue(specification("s3://mlflow/nothing-here", null).getAttachment().isEmpty());
+    }
+
+    @Test
+    void modelWithAnOnnxCopy_getsAnAttachmentPerFormat() {
+        AiModelSpecificationCreate spec = specification("s3://mlflow/1/models/m-2/artifacts", null);
+
+        assertEquals(java.util.List.of("mlflow-model", "onnx"), spec.getAttachment().stream()
+                .map(org.etsi.osl.controllers.tmf915.model.AttachmentRefOrValue::getAttachmentType).toList());
+        assertEquals(140f, spec.getAttachment().get(0).getSize().getAmount(), "the MLflow model includes extra_files");
+        assertEquals(40f, spec.getAttachment().get(1).getSize().getAmount());
+        assertEquals("iris-m-1-onnx.zip", spec.getAttachment().get(1).getName());
     }
 }

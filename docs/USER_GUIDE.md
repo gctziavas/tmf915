@@ -123,7 +123,7 @@ curl -s -H "Authorization: Bearer $TOKEN" "$API/aiModelSpecification/<SPEC_ID>"
 - **Name and version:** a specification's `name` is the MLflow experiment name, and its `version` is the MLflow model id (`m-…`).
 - **Paging:** lists return 50 items by default. Use `limit` and `offset` to page, for example `?offset=50&limit=50`.
 - **`fields`:** without `fields`, list responses contain every attribute, which can be large.
-- **Download a model:** instead of deploying it, you can download a model's files and run it in your own code: `curl -fSL -H "Authorization: Bearer $TOKEN" -o model.zip "$API/aiModelSpecification/<SPEC_ID>/artifacts"`. Downloadable specifications have an `attachment` with the link and size. See the [integration guide](INTEGRATION_GUIDE.md#5-using-a-model-as-a-library) for loading it.
+- **Download a model:** instead of deploying it, you can download a model's files and run it in your own code: `curl -fSL -H "Authorization: Bearer $TOKEN" -o model.zip "$API/aiModelSpecification/<SPEC_ID>/artifacts"`. Downloadable specifications have an `attachment` with the link and size, one per format; add `?format=onnx` for the ONNX version when one is offered. See the [integration guide](INTEGRATION_GUIDE.md#5-using-a-model-as-a-library) for loading it.
 
 ---
 
@@ -266,7 +266,7 @@ Settings live in `src/main/resources/application.yml`. In Docker Compose, overri
 | Model goes back to `designed` | Read the last `note`. It gives a short reason and a reference, for example `Image build failed (reference 3f2c9a1b; details are in the server log)`. Find the details with `docker compose logs tmf915 \| grep 3f2c9a1b`. "model files not found": the artifacts are missing in MinIO. "No free host port": every port in `host-port-start`–`host-port-end` is taken. "Docker host not allowed": see `mlflow.docker.allowed-hosts`. |
 | Model disappeared from `active` after a day | `endDate` defaults to one day after `startDate`. Set `endDate` when deploying. |
 | `endpoint` not reachable | With the local Docker socket the endpoint host is `localhost`. Set `aimodel.deployment.serving-base-url` (environment variable `AIMODEL_DEPLOYMENT_SERVING_BASE_URL`) to the address clients use, and redeploy; models deployed earlier keep their old endpoint. Or deploy with a `tcp://` `dockerHost`. |
-| `404` when downloading a model (`…/artifacts`) | The body says why. "downloadable=false": the publisher opted out. "has no downloadable artifact": the files are not in MinIO, are outside `aimodel.artifacts.allowed-locations`, or the API has no S3 settings; the API log (`grep "AiModelSpecification <id>"`) says which. |
+| `404` when downloading a model (`…/artifacts`) | The body says why. "downloadable=false": the publisher opted out. "has no download in format …": that format is not offered for this model; see its attachments. "has no downloadable artifact": the files are not in MinIO, are outside `aimodel.artifacts.allowed-locations`, or the API has no S3 settings; the API log (`grep "AiModelSpecification <id>"`) says which. |
 | `413` when downloading a model | Larger than `aimodel.artifacts.max-download-bytes`. |
 | Downloaded zip is incomplete | The download took longer than `aimodel.artifacts.download-timeout` (log: `Model download failed … DownloadTimeoutException`). Raise it, or download from closer to the server. |
 | `415 Unsupported Media Type` | Send `Content-Type: application/json`. |

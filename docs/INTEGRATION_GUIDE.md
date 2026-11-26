@@ -178,38 +178,52 @@ curl -s -H "Authorization: Bearer $TOKEN" "$API/aiModelSpecification?fields=name
   "id": "3f2c…", "name": "iris-classifier", "version": "m-8a1e…",
   "attachment": [{
     "@type": "ModelArtifactAttachment", "@baseType": "Attachment",
-    "href": "/tmf-api/AiM/v4/aiModelSpecification/3f2c…/artifacts",
+    "href": "/tmf-api/AiM/v4/aiModelSpecification/3f2c…/artifacts?format=mlflow-model",
     "attachmentType": "mlflow-model",
     "mimeType": "application/zip",
-    "name": "iris-classifier-m-8a1e….zip",
+    "name": "iris-classifier-m-8a1e…-mlflow-model.zip",
     "size": {"amount": 1843921.0, "units": "bytes"},
-    "description": "Model files (format mlflow-model, 9 files, 1843921 bytes), downloaded as a zip"
+    "description": "Model files (format mlflow-model, 10 files, 1843921 bytes), downloaded as a zip"
+  }, {
+    "@type": "ModelArtifactAttachment", "@baseType": "Attachment",
+    "href": "/tmf-api/AiM/v4/aiModelSpecification/3f2c…/artifacts?format=onnx",
+    "attachmentType": "onnx",
+    "mimeType": "application/zip",
+    "name": "iris-classifier-m-8a1e…-onnx.zip",
+    "size": {"amount": 412233.0, "units": "bytes"},
+    "description": "Model files (format onnx, 1 file, 412233 bytes), downloaded as a zip"
   }]
 }
 ```
 
 | Field | Meaning |
 |---|---|
-| `href` | The download URL (below). |
-| `attachmentType` | The format of the files: how to load them (see [5.3](#53-formats)). Also in the `artifactFormat` characteristic. |
+| `href` | The download URL for this format (below). |
+| `attachmentType` | The format of the files: how to load them (see [5.3](#53-formats)). There is one attachment per format the model is offered in; the primary one is also in the `artifactFormat` characteristic. |
 | `size` | Total size of the files before zipping. `amount` is a TMF float; the exact byte count is in `description`. |
 | `name` | A file name for the zip. |
 
-A specification has no such attachment when its model cannot be downloaded: its platform does not support downloads, its publisher opted out (characteristic `downloadable=false`), its files are outside the storage the server may read, it is larger than the server's limit, or the server has no storage configured. Specifications catalogued before downloads existed get the attachment in the background after the server's next start.
+A model is offered as `onnx` too when its publisher added an ONNX copy (see the [model publishing guide](MODEL_PUBLISHING_GUIDE.md#also-offer-an-onnx-version)). A specification has no such attachment when its model cannot be downloaded: its platform does not support downloads, its publisher opted out (characteristic `downloadable=false`), its files are outside the storage the server may read, it is larger than the server's limit, or the server has no storage configured. Specifications catalogued before downloads existed get the attachment in the background after the server's next start.
 
 ### 5.2 Download
 
 ```bash
 curl -fSL -H "Authorization: Bearer $TOKEN" -o iris.zip "$API/aiModelSpecification/<SPEC_ID>/artifacts"
 unzip -q iris.zip -d iris-model
+
+# Another format the specification offers (an attachmentType of its attachments)
+curl -fSL -H "Authorization: Bearer $TOKEN" -o iris-onnx.zip "$API/aiModelSpecification/<SPEC_ID>/artifacts?format=onnx"
 ```
+
+Without `format`, the download is the primary format (`artifactFormat`). The simplest client follows an attachment's `href`, which always names its format.
 
 | Status | Meaning |
 |---|---|
-| `200` | `Content-Type: application/zip`, `Content-Disposition: attachment; filename="<name>-<version>.zip"`. The zip is streamed while the server reads the files from storage, so there is no `Content-Length`. Entry names are paths relative to the model directory; none is absolute or contains `..`. |
+| `200` | `Content-Type: application/zip`, `Content-Disposition: attachment; filename="<name>-<version>.zip"` (`<name>-<version>-<format>.zip` with `format`). The zip is streamed while the server reads the files from storage, so there is no `Content-Length`. Entry names are paths relative to the model directory; none is absolute or contains `..`. |
+| `400` | `format` is not made of letters, digits, `.`, `_` and `-` (at most 64). |
 | `401`, `403` | No valid token, or no `ROLE_USER`. Every user with `ROLE_USER` may download every downloadable model. |
-| `404` | Unknown id, or no downloadable files. The plain-text body says which, and says when the publisher opted out (`downloadable=false`). It does not say whether files exist outside the allowed storage. |
-| `413` | Larger than the server's limit (`aimodel.artifacts.max-download-bytes`, 2 GB by default). |
+| `404` | Unknown id, no downloadable files, or not offered in that `format`. The plain-text body says which, and says when the publisher opted out (`downloadable=false`). It does not say whether files exist outside the allowed storage. |
+| `413` | Larger than the server's limit (`aimodel.artifacts.max-download-bytes`, 2 GB by default). The limit applies per format: the `onnx` download of a large model may still fit. |
 | `503` | Storage is temporarily unavailable. Retry later. |
 
 **Time limit.** A download that takes longer than `aimodel.artifacts.download-timeout` (15 minutes by default) is cut off. The client then has an incomplete zip, which `unzip -t` rejects. Errors after the first bytes have been sent cannot change the `200` status, so always check the zip, for example by comparing the extracted size with `size`. There is no resume (`Range`) support; download again.
@@ -221,7 +235,7 @@ Every download is logged on the server with the user (token subject), the specif
 | `attachmentType` / `artifactFormat` | Content | Load with |
 |---|---|---|
 | `mlflow-model` | An MLflow model directory: `MLmodel`, environment files (`requirements.txt`, `conda.yaml`, `python_env.yaml`) and the flavor's files | `mlflow.pyfunc.load_model(<directory>)`, after installing `requirements.txt` |
-| `onnx` (planned) | An `.onnx` file | onnxruntime, in any language |
+| `onnx` | `model.onnx`, a self-contained ONNX model (offered when the publisher added one) | [ONNX Runtime](https://onnxruntime.ai/), in Python, Java, C#, C++, JavaScript, … No ML framework or MLflow needed |
 | others (e.g. `pytorch`, `tensorflow-savedmodel`, `huggingface`) | As the platform stores them | The framework's own loader |
 
 The API delivers the files as the platform stored them; it does not convert between formats. New platforms add rows to this table; existing values keep their meaning.
@@ -260,9 +274,30 @@ print(model.predict(pd.DataFrame([[5.1, 3.5, 1.4, 0.2]],
 
 The column names come from the model's signature, which `MLmodel` lists under `signature`.
 
-### 5.5 Security notes
+### 5.5 Example: run the ONNX version
 
-- **Loading a model runs its code.** Pickle, cloudpickle and some other formats execute code when loaded, and `requirements.txt` installs packages. The API cannot make that safe. Load only models from publishers you trust, in an isolated environment. The server logs who downloaded which model.
+```python
+import io, zipfile
+import numpy as np
+import onnxruntime as ort          # pip install onnxruntime; no scikit-learn or MLflow
+import requests
+
+r = requests.get(f"{API}/aiModelSpecification/{SPEC_ID}/artifacts", params={"format": "onnx"},
+                 headers={"Authorization": f"Bearer {TOKEN}"}, timeout=60)
+r.raise_for_status()
+with zipfile.ZipFile(io.BytesIO(r.content)) as z:
+    z.extract("model.onnx", "model")
+
+session = ort.InferenceSession("model/model.onnx")
+features = np.array([[5.1, 3.5, 1.4, 0.2]], dtype=np.float32)
+print(session.run(None, {session.get_inputs()[0].name: features})[0])   # predicted labels
+```
+
+The input name, type and shape are in `session.get_inputs()`; the outputs depend on the converter (for scikit-learn classifiers: labels, then probabilities).
+
+### 5.6 Security notes
+
+- **Loading a model runs its code.** Pickle, cloudpickle and some other formats execute code when loaded, and `requirements.txt` installs packages. (An ONNX file is a computation graph, not code, which makes `onnx` the safer format to consume.) The API cannot make that safe. Load only models from publishers you trust, in an isolated environment. The server logs who downloaded which model.
 - **Publishers decide.** A model whose publisher set `downloadable=false` (see the [model publishing guide](MODEL_PUBLISHING_GUIDE.md#3-what-ends-up-in-the-catalog)) cannot be downloaded through the API.
 - **Storage stays private.** The API reads only locations under `aimodel.artifacts.allowed-locations` (the MLflow bucket by default), even for specifications created with `POST /aiModelSpecification` that point elsewhere. Storage credentials never leave the server.
 
@@ -414,7 +449,7 @@ The sync remembers which models it published, never creates one twice, processes
 
 ### 8.2 Downloads: artifact locator and store
 
-1. An `ArtifactLocator` bean: `supports(spec)` checks the `platform` characteristic; `locate(spec)` returns the files' location (a URI) and format. It must not read storage. `MlflowArtifactLocator` is the example.
+1. An `ArtifactLocator` bean: `supports(spec)` checks the `platform` characteristic; `locate(spec)` returns one `ArtifactLocation` per format the model may be offered in, primary first: a URI, the format, and optionally the exact files that make it up. It must not read storage: formats whose files are missing are simply not offered. `MlflowArtifactLocator` (the MLflow directory, plus `extra_files/model.onnx` as `onnx`) is the example.
 2. An `ArtifactStore` for the location's URI scheme, if it is not `s3://` (`S3ArtifactStore`): it lists the files under a location and opens one. Add your locations to `aimodel.artifacts.allowed-locations`.
 
 The endpoint, roles, allow-list, size and time limits, zip streaming, logging and the attachment on synced specifications are generic.
@@ -453,6 +488,6 @@ See `MlflowDeployer` for a complete example.
 - **Implemented resources:** only `aiModel`, `aiModelSpecification` and the event subscription `hub` (`POST /hub`, `DELETE /hub/{id}`). AI contracts, contract specifications and violations, alarms, rules, monitors, topics and events return `501 Not Implemented`. So does the topic-scoped hub, `/topic/{id}/hub`.
 - **Webhooks:** off by default, best effort, no retries and no signing (see [section 6](#6-event-notifications-webhooks)).
 - **Model endpoints:** they are plain HTTP and unauthenticated (see [4.3](#43-wait-for-the-result)).
-- **Model downloads:** one format per specification (`mlflow-model` today), no resume, and a time limit per download (see [section 5](#5-using-a-model-as-a-library)).
+- **Model downloads:** MLflow models are offered as `mlflow-model`, and as `onnx` when the publisher added an ONNX copy; the API does not convert. No resume, and a time limit per download (see [section 5](#5-using-a-model-as-a-library)).
 - **MCP:** unauthenticated by design; restrict it at the network level (see [section 7](#7-mcp-server-for-ai-agents)).
 - **Specification lists:** no total count is returned.

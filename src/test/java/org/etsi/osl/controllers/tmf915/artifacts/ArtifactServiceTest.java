@@ -38,10 +38,10 @@ class ArtifactServiceTest {
         }
 
         @Override
-        public ArtifactLocation locate(AiModelSpecification spec) {
-            return new ArtifactLocation(
+        public List<ArtifactLocation> locate(AiModelSpecification spec) {
+            return List.of(new ArtifactLocation(
                     URI.create(ArtifactCharacteristics.value(spec.getSpecCharacteristic(), "artifactUri").orElseThrow()),
-                    "test-format");
+                    "test-format"));
         }
     };
 
@@ -218,5 +218,108 @@ class ArtifactServiceTest {
         ModelArtifact artifact = service.resolve(spec("artifactUri", LOCATION));
         assertThrows(IOException.class,
                 () -> service.writeZip("spec-1", "tester", artifact, new ByteArrayOutputStream()));
+    }
+
+    // ── Several formats ──────────────────────────────────────────────────
+
+    /** Primary: the whole directory; "onnx": just extra_files/model.onnx. */
+    private final ArtifactLocator twoFormats = new ArtifactLocator() {
+        @Override
+        public boolean supports(AiModelSpecification spec) {
+            return true;
+        }
+
+        @Override
+        public List<ArtifactLocation> locate(AiModelSpecification spec) {
+            URI root = URI.create(ArtifactCharacteristics.value(spec.getSpecCharacteristic(), "artifactUri").orElseThrow());
+            return List.of(new ArtifactLocation(root, "mlflow-model"),
+                    new ArtifactLocation(URI.create(root + "/extra_files"), "onnx", List.of("model.onnx")));
+        }
+    };
+
+    private final InMemoryArtifactStore withOnnx = new InMemoryArtifactStore()
+            .put(LOCATION, "MLmodel", new byte[]{1, 2})
+            .put(LOCATION, "model.pkl", new byte[]{3, 4, 5})
+            .put(LOCATION + "/extra_files", "model.onnx", new byte[]{6, 7, 8, 9})
+            .put(LOCATION + "/extra_files", "notes.txt", new byte[]{1});
+
+    private ArtifactService formats(ArtifactStore store) {
+        return new ArtifactService(List.of(twoFormats), List.of(store), List.of("s3://mlflow/"),
+                100, Duration.ofMinutes(15), Clock.systemUTC());
+    }
+
+    @Test
+    void withoutAFormat_thePrimaryIsServed() {
+        ModelArtifact artifact = formats(withOnnx).resolve(spec("artifactUri", LOCATION), null);
+        assertEquals("mlflow-model", artifact.format());
+        // The whole MLflow model, its extra_files included: 2 + 3 + 4 + 1 bytes.
+        assertEquals(10, artifact.totalBytes());
+    }
+
+    @Test
+    void aNamedFormat_servesOnlyItsFiles() {
+        ModelArtifact artifact = formats(withOnnx).resolve(spec("artifactUri", LOCATION), "onnx");
+
+        assertEquals("onnx", artifact.format());
+        assertEquals(List.of(new ArtifactFile("model.onnx", 4)), artifact.files());
+        assertEquals(URI.create(LOCATION + "/extra_files"), artifact.location());
+    }
+
+    @Test
+    void theNamedPrimaryFormat_isServedToo() {
+        assertEquals(10, formats(withOnnx).resolve(spec("artifactUri", LOCATION), "mlflow-model").totalBytes());
+    }
+
+    @Test
+    void unknownOrMissingFormat_isNotAvailable_andSaysSo() {
+        ArtifactNotAvailableException unknown = assertThrows(ArtifactNotAvailableException.class,
+                () -> formats(withOnnx).resolve(spec("artifactUri", LOCATION), "pytorch"));
+        assertEquals("AiModelSpecification spec-1 has no download in format pytorch", unknown.getMessage());
+
+        // The locator offers onnx, but the file is not stored.
+        ArtifactNotAvailableException missing = assertThrows(ArtifactNotAvailableException.class,
+                () -> formats(store).resolve(spec("artifactUri", LOCATION), "onnx"));
+        assertEquals("AiModelSpecification spec-1 has no download in format onnx", missing.getMessage());
+    }
+
+    @Test
+    void describeAll_listsTheAvailableFormats_primaryFirst() {
+        assertEquals(List.of("mlflow-model", "onnx"),
+                formats(withOnnx).describeAll(spec("artifactUri", LOCATION)).stream().map(ModelArtifact::format).toList());
+        assertEquals(List.of("mlflow-model"),
+                formats(store).describeAll(spec("artifactUri", LOCATION)).stream().map(ModelArtifact::format).toList());
+        assertTrue(formats(withOnnx).describeAll(spec("artifactUri", LOCATION, "downloadable", "false")).isEmpty());
+        assertTrue(formats(withOnnx).describeAll(spec("artifactUri", "s3://other/x")).isEmpty());
+    }
+
+    @Test
+    void aFormatWithSeveralFiles_needsAllOfThem() {
+        ArtifactLocation both = new ArtifactLocation(URI.create(LOCATION), "f", List.of("MLmodel", "model.pkl"));
+        ArtifactLocation oneMissing = new ArtifactLocation(URI.create(LOCATION), "f", List.of("MLmodel", "absent.bin"));
+        assertEquals(5, service(100).inspect(both).orElseThrow().totalBytes());
+        assertTrue(service(100).inspect(oneMissing).isEmpty());
+    }
+
+    @Test
+    void sizeLimitAppliesPerFormat() {
+        ArtifactService small = new ArtifactService(List.of(twoFormats), List.of(withOnnx), List.of("s3://mlflow/"),
+                4, Duration.ofMinutes(15), Clock.systemUTC());
+        assertThrows(ArtifactTooLargeException.class, () -> small.resolve(spec("artifactUri", LOCATION), null));
+        assertEquals(4, small.resolve(spec("artifactUri", LOCATION), "onnx").totalBytes());
+        assertEquals(List.of("onnx"),
+                small.describeAll(spec("artifactUri", LOCATION)).stream().map(ModelArtifact::format).toList());
+    }
+
+    @Test
+    void writeZip_ofANamedFormat_hasOnlyItsFiles() throws IOException {
+        ArtifactService service = formats(withOnnx);
+        ModelArtifact artifact = service.resolve(spec("artifactUri", LOCATION), "onnx");
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+
+        service.writeZip("spec-1", "tester", artifact, out);
+
+        Map<String, byte[]> entries = ArtifactZipWriterTest.unzip(out.toByteArray());
+        assertEquals(List.of("model.onnx"), List.copyOf(entries.keySet()));
+        assertArrayEquals(new byte[]{6, 7, 8, 9}, entries.get("model.onnx"));
     }
 }

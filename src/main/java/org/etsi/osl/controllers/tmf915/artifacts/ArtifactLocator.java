@@ -2,6 +2,8 @@ package org.etsi.osl.controllers.tmf915.artifacts;
 
 import org.etsi.osl.controllers.tmf915.model.AiModelSpecification;
 
+import java.util.List;
+
 /**
  * Platform-specific part of model downloads: finds where a specification's files are stored.
  * One implementation per model platform (MLflow, Kubeflow, …), chosen at runtime like
@@ -16,10 +18,13 @@ public interface ArtifactLocator {
     boolean supports(AiModelSpecification specification);
 
     /**
-     * Returns the artifact's location and format.
+     * Returns where each format the specification may offer is stored. The first is the primary
+     * format, downloaded when the client names none. A listed format need not exist: formats
+     * whose files are not stored are not offered ({@link ArtifactService} checks).
      *
+     * @return at least one location
      * @throws ArtifactNotAvailableException if the specification has no artifact this locator can
      *                                       find (for example a missing location characteristic)
      */
-    ArtifactLocation locate(AiModelSpecification specification);
+    List<ArtifactLocation> locate(AiModelSpecification specification);
 }

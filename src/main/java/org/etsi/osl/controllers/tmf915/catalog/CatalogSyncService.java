@@ -3,6 +3,7 @@ package org.etsi.osl.controllers.tmf915.catalog;
 import org.etsi.osl.controllers.tmf915.artifacts.ArtifactCharacteristics;
 import org.etsi.osl.controllers.tmf915.artifacts.ArtifactService;
 import org.etsi.osl.controllers.tmf915.artifacts.DownloadAttachments;
+import org.etsi.osl.controllers.tmf915.artifacts.ModelArtifact;
 import org.etsi.osl.controllers.tmf915.mappers.AiModelSpecificationMapper;
 import org.etsi.osl.controllers.tmf915.model.AiModelSpecificationCreate;
 import org.etsi.osl.controllers.tmf915.reposervices.AiModelSpecificationRepositoryService;
@@ -199,10 +200,11 @@ public class CatalogSyncService {
     }
 
     /**
-     * {@code platform} and {@code artifactFormat} (unless the source set them), and the download
-     * attachment if the model is downloadable. "Downloadable" is decided exactly as the download
-     * endpoint decides it ({@link ArtifactService#describe}: opt-out, locator, allow-list,
-     * storage, size limit), so the catalog never advertises a download that would fail.
+     * {@code platform} and {@code artifactFormat} (unless the source set them), and one download
+     * attachment per format the model can be downloaded in. That is decided exactly as the
+     * download endpoint decides it ({@link ArtifactService#describeAll}: opt-out, locator,
+     * allow-list, storage, size limit), so the catalog never advertises a download that would
+     * fail.
      */
     void addPlatformNeutralFields(CatalogSource<?> source, AiModelSpecificationCreate specification) {
         if (specification.getSpecCharacteristic() == null) {
@@ -215,9 +217,10 @@ public class CatalogSyncService {
         if (DownloadAttachments.find(specification.getAttachment()).isPresent()) {
             return;
         }
-        artifactService.describe(AiModelSpecificationMapper.fromCreate(specification))
-                .ifPresent(artifact -> specification.addAttachmentItem(
-                        DownloadAttachments.create(specification.getName(), specification.getVersion(), artifact)));
+        for (ModelArtifact artifact : artifactService.describeAll(AiModelSpecificationMapper.fromCreate(specification))) {
+            specification.addAttachmentItem(
+                    DownloadAttachments.create(specification.getName(), specification.getVersion(), artifact));
+        }
     }
 
     /** What the sync remembers about one source between ticks. */

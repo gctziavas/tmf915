@@ -151,6 +151,43 @@ curl -s -X PATCH -H "Authorization: Bearer $TOKEN" -H "Content-Type: application
 
 The download then answers `404` with the reason, and the attachment disappears. Opting out does not affect deployment: the model can still be deployed and called through its endpoint.
 
+### Also offer an ONNX version
+
+An MLflow model can only be loaded with Python and the libraries it was trained with (`requirements.txt`). An [ONNX](https://onnx.ai/) copy of the same model can be run with [ONNX Runtime](https://onnxruntime.ai/) from Python, Java, C#, C++ or JavaScript, without scikit-learn, PyTorch or MLflow, and is usually smaller and faster to load. If you add one, consumers can choose: the catalog entry then offers two downloads, `mlflow-model` and `onnx`.
+
+The API does not convert models; you add the ONNX file when you log the model, with `extra_files`. It must be called **`model.onnx`**. For the example in section 2 (`pip install skl2onnx onnxruntime`):
+
+```python
+import numpy as np
+from skl2onnx import to_onnx
+
+# Convert the fitted pipeline; the sample fixes the input type and width (4 float features).
+onx = to_onnx(pipeline, X_train.to_numpy(dtype=np.float32)[:1])
+with open("model.onnx", "wb") as f:
+    f.write(onx.SerializeToString())
+
+# Check the copy predicts like the original before publishing it.
+import onnxruntime as ort
+session = ort.InferenceSession("model.onnx")
+onnx_labels = session.run(None, {session.get_inputs()[0].name: X_test.to_numpy(dtype=np.float32)})[0]
+assert (onnx_labels == pipeline.predict(X_test)).all()
+
+model_info = mlflow.sklearn.log_model(
+    pipeline,
+    name="model",
+    ...,                                   # as in section 2
+    extra_files=["model.onnx"],            # → offered as the "onnx" format
+)
+```
+
+MLflow stores the file as `extra_files/model.onnx` in the model directory, which is where the API looks. Consumers download it with `GET /aiModelSpecification/<SPEC_ID>/artifacts?format=onnx`: a zip holding just `model.onnx`.
+
+- **Flavors:** `extra_files` exists for `sklearn`, `pytorch`, `xgboost`, `lightgbm`, `catboost`, `statsmodels` and `onnx` (checked with MLflow 3.10). `pyfunc` and `transformers` models cannot offer an ONNX copy this way.
+- **Converters:** `skl2onnx` (scikit-learn), `torch.onnx.export` (PyTorch), `onnxmltools` (XGBoost, LightGBM, CatBoost). Not every model converts; check predictions as above.
+- **One file:** the ONNX file must be self-contained. Models over 2 GB, which ONNX stores with separate weight files, are not supported.
+- **Size limit:** each format counts separately against the server's limit (2 GB by default). The full MLflow model includes the ONNX copy, so it is the larger download.
+- **When:** only at logging time. A model catalogued without the file does not get the ONNX download later; log a new version.
+
 ## 4. Check that your model was published
 
 Within about a minute (the sync runs every minute):
@@ -211,5 +248,6 @@ To remove a version from the catalog: `DELETE /aiModelSpecification/<SPEC_ID>`. 
 | `inferencePayloadExample` contains `WARNING: Could not extract signature` | No signature was logged. Log the model again with`signature=` or `input_example=`.                                                                                                                                                                                     |
 | Deployment goes back to `designed`, note "Image build failed: model files not found" | Artifacts missing or unreadable in MinIO. Check the bucket in the MinIO console (http://localhost:9011). |
 | Deployment goes back to `designed`, note "Image build failed" | `mlflow models build-docker` could not build your environment, usually an unpinned or unavailable dependency. The note has a reference; the operator finds the build output in the server log with it. Or run `mlflow models build-docker -m <artifactUri> -n test` yourself, and pin versions with `pip_requirements=`. |
+| No `onnx` attachment although you added an ONNX copy | The file is not named `model.onnx`, was not passed with `extra_files` (check that the MLflow UI shows `extra_files/model.onnx` under the model's artifacts), the model was logged with a flavor without `extra_files`, or it is above the size limit. |
 | Specification has no `ModelArtifactAttachment`                            | The model opted out (`downloadable=false`); or its artifacts are outside the storage the API may read (`aimodel.artifacts.allowed-locations`, the `mlflow` bucket by default); or they are larger than `aimodel.artifacts.max-download-bytes`; or the API has no S3 settings. Models catalogued before downloads existed get the attachment after the API's next restart. |
 | Endpoint returns`400`                                                     | The request body doesn't match the signature. Start from`inferencePayloadExample` and replace the placeholder values.                                                                                                                                                  |

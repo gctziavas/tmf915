@@ -14,7 +14,6 @@ import org.mockito.ArgumentCaptor;
 
 import java.net.URI;
 import java.util.List;
-import java.util.Optional;
 
 import static org.etsi.osl.controllers.tmf915.catalog.FakeCatalogSource.model;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -266,7 +265,7 @@ class CatalogSyncServiceTest {
             c.addSpecCharacteristicItem(ArtifactCharacteristics.of("artifactUri", "", "s3://mlflow/x"));
             return c;
         };
-        when(artifactService.describe(any())).thenReturn(Optional.of(ARTIFACT));
+        when(artifactService.describeAll(any())).thenReturn(List.of(ARTIFACT));
 
         sync.syncAll();
 
@@ -275,11 +274,11 @@ class CatalogSyncServiceTest {
         assertEquals("fake-format", ArtifactCharacteristics.value(spec.getSpecCharacteristic(), "artifactFormat").orElseThrow());
         assertEquals(1, spec.getAttachment().size());
         assertEquals(DownloadAttachments.TYPE, spec.getAttachment().get(0).getAtType());
-        assertEquals("iris-m-1.zip", spec.getAttachment().get(0).getName());
+        assertEquals("iris-m-1-fake-format.zip", spec.getAttachment().get(0).getName());
         assertEquals(2000f, spec.getAttachment().get(0).getSize().getAmount());
         // Decided like the download endpoint: on the specification as it will be stored.
         ArgumentCaptor<AiModelSpecification> described = ArgumentCaptor.forClass(AiModelSpecification.class);
-        verify(artifactService).describe(described.capture());
+        verify(artifactService).describeAll(described.capture());
         assertEquals("fake", ArtifactCharacteristics.value(described.getValue().getSpecCharacteristic(), "platform").orElseThrow());
         assertEquals("s3://mlflow/x", ArtifactCharacteristics.value(described.getValue().getSpecCharacteristic(), "artifactUri").orElseThrow());
     }
@@ -287,7 +286,7 @@ class CatalogSyncServiceTest {
     @Test
     void notDownloadable_getsNoAttachment_butStillPlatformAndFormat() {
         source.all = List.of(model("m-1", 1_000));
-        when(artifactService.describe(any())).thenReturn(Optional.empty());
+        when(artifactService.describeAll(any())).thenReturn(List.of());
 
         sync.syncAll();
 
@@ -312,6 +311,6 @@ class CatalogSyncServiceTest {
         assertEquals(1, spec.getSpecCharacteristic().stream().filter(c -> "artifactFormat".equals(c.getName())).count());
         assertEquals("onnx", ArtifactCharacteristics.value(spec.getSpecCharacteristic(), "artifactFormat").orElseThrow());
         assertEquals(1, spec.getAttachment().size());
-        verify(artifactService, times(0)).describe(any());
+        verify(artifactService, times(0)).describeAll(any());
     }
 }

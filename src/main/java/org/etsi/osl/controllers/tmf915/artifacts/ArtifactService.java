@@ -14,6 +14,7 @@ import java.net.URI;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
@@ -71,15 +72,22 @@ public class ArtifactService {
         return downloadTimeout;
     }
 
+    /** {@link #resolve(AiModelSpecification, String)} for the primary format. */
+    public ModelArtifact resolve(AiModelSpecification specification) {
+        return resolve(specification, null);
+    }
+
     /**
-     * Resolves what {@code GET …/artifacts} would send for this specification.
+     * Resolves what {@code GET …/artifacts[?format=…]} would send for this specification.
      *
+     * @param format the format asked for; {@code null}: the primary one
      * @throws ArtifactNotAvailableException opted out, no locator, location not allowed, no
-     *                                       store for it, or nothing stored there ({@code 404})
+     *                                       store for it, nothing stored there, or no such format
+     *                                       ({@code 404})
      * @throws ArtifactTooLargeException     above the size limit ({@code 413})
      * @throws ArtifactStorageException      storage could not be read ({@code 503})
      */
-    public ModelArtifact resolve(AiModelSpecification specification) {
+    public ModelArtifact resolve(AiModelSpecification specification, String format) {
         String id = specification.getId();
         if (ArtifactCharacteristics.optedOut(specification.getSpecCharacteristic())) {
             throw new ArtifactNotAvailableException(
@@ -89,12 +97,18 @@ public class ArtifactService {
                 .filter(l -> l.supports(specification))
                 .findFirst()
                 .orElseThrow(() -> noArtifact(id));
-        ArtifactLocation location = locator.locate(specification);
+        List<ArtifactLocation> locations = locator.locate(specification);
+        if (locations.isEmpty()) {
+            throw noArtifact(id);
+        }
+        ArtifactLocation location = format == null ? locations.get(0)
+                : locations.stream().filter(l -> l.format().equals(format)).findFirst()
+                        .orElseThrow(() -> noFormat(id, format));
         ArtifactStore store = storeFor(location.uri(), id).orElseThrow(() -> noArtifact(id));
 
         List<ArtifactFile> files;
         try {
-            files = store.list(location.uri());
+            files = listFiles(store, location);
         } catch (IllegalArgumentException e) {
             log.warn("AiModelSpecification {}: artifact at {} has an unsafe file path ({}); not served",
                     id, location.uri(), e.getMessage());
@@ -103,8 +117,8 @@ public class ArtifactService {
             throw new ArtifactStorageException("Artifact storage is unavailable", e);
         }
         if (files.isEmpty()) {
-            log.debug("AiModelSpecification {}: nothing stored at {}", id, location.uri());
-            throw noArtifact(id);
+            log.debug("AiModelSpecification {}: nothing stored at {} for format {}", id, location.uri(), location.format());
+            throw format == null ? noArtifact(id) : noFormat(id, format);
         }
         ModelArtifact artifact = ModelArtifact.of(location, files);
         if (artifact.totalBytes() > maxDownloadBytes) {
@@ -113,6 +127,27 @@ public class ArtifactService {
                     + " bytes (aimodel.artifacts.max-download-bytes)");
         }
         return artifact;
+    }
+
+    /**
+     * The files of one format: everything under the location, or, if the location names its
+     * files, exactly those (empty if one is missing).
+     */
+    private static List<ArtifactFile> listFiles(ArtifactStore store, ArtifactLocation location) throws IOException {
+        List<ArtifactFile> files = store.list(location.uri());
+        if (location.paths().isEmpty()) {
+            return files;
+        }
+        List<ArtifactFile> selected = new ArrayList<>();
+        for (String path : location.paths()) {
+            String wanted = ArtifactPaths.normalize(path);
+            Optional<ArtifactFile> file = files.stream().filter(f -> f.path().equals(wanted)).findFirst();
+            if (file.isEmpty()) {
+                return List.of();
+            }
+            selected.add(file.get());
+        }
+        return selected;
     }
 
     /**
@@ -126,14 +161,14 @@ public class ArtifactService {
             return Optional.empty();
         }
         try {
-            List<ArtifactFile> files = store.get().list(location.uri());
+            List<ArtifactFile> files = listFiles(store.get(), location);
             if (files.isEmpty()) {
                 return Optional.empty();
             }
             ModelArtifact artifact = ModelArtifact.of(location, files);
             if (artifact.totalBytes() > maxDownloadBytes) {
-                log.info("Artifact at {} is {} bytes, above aimodel.artifacts.max-download-bytes; not advertised",
-                        location.uri(), artifact.totalBytes());
+                log.info("Artifact at {} ({}) is {} bytes, above aimodel.artifacts.max-download-bytes; not advertised",
+                        location.uri(), location.format(), artifact.totalBytes());
                 return Optional.empty();
             }
             return Optional.of(artifact);
@@ -144,22 +179,28 @@ public class ArtifactService {
     }
 
     /**
-     * What {@link #resolve} would serve, for advertising it, or empty if the specification is
-     * not downloadable. Never throws.
+     * Every format {@link #resolve} would serve, primary first, for advertising them. Empty if
+     * the specification is not downloadable. Never throws.
      */
-    public Optional<ModelArtifact> describe(AiModelSpecification specification) {
+    public List<ModelArtifact> describeAll(AiModelSpecification specification) {
         if (ArtifactCharacteristics.optedOut(specification.getSpecCharacteristic())) {
-            return Optional.empty();
+            return List.of();
         }
         Optional<ArtifactLocator> locator = locators.stream().filter(l -> l.supports(specification)).findFirst();
         if (locator.isEmpty()) {
-            return Optional.empty();
+            return List.of();
         }
+        List<ArtifactLocation> locations;
         try {
-            return inspect(locator.get().locate(specification));
+            locations = locator.get().locate(specification);
         } catch (RuntimeException e) {
-            return Optional.empty();
+            return List.of();
         }
+        List<ModelArtifact> available = new ArrayList<>();
+        for (ArtifactLocation location : locations) {
+            inspect(location).ifPresent(available::add);
+        }
+        return available;
     }
 
     /** False if no artifact store is configured (no S3 settings): nothing can be downloaded. */
@@ -235,6 +276,11 @@ public class ArtifactService {
             }
         }
         return false;
+    }
+
+    private static ArtifactNotAvailableException noFormat(String id, String format) {
+        return new ArtifactNotAvailableException(
+                "AiModelSpecification " + id + " has no download in format " + format);
     }
 
     /** One message for every "nothing to download" case, so it does not reveal which one. */

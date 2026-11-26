@@ -7,7 +7,6 @@ import org.junit.jupiter.api.Test;
 import java.net.URI;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
 import java.util.stream.IntStream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -46,17 +45,17 @@ class DownloadAttachmentBackfillTest {
         when(specifications.findAllAiModelSpecifications(DownloadAttachmentBackfill.PAGE_SIZE, DownloadAttachmentBackfill.PAGE_SIZE))
                 .thenReturn(List.of(spec("last")));
         // Only s1 and "last" are downloadable.
-        when(artifacts.describe(any())).thenReturn(Optional.empty());
-        when(artifacts.describe(first.get(1))).thenReturn(Optional.of(ARTIFACT));
-        when(artifacts.describe(org.mockito.ArgumentMatchers.argThat(s -> s != null && "last".equals(s.getId()))))
-                .thenReturn(Optional.of(ARTIFACT));
-        when(specifications.addDownloadAttachment(any(), any())).thenReturn(true);
+        when(artifacts.describeAll(any())).thenReturn(List.of());
+        when(artifacts.describeAll(first.get(1))).thenReturn(List.of(ARTIFACT));
+        when(artifacts.describeAll(org.mockito.ArgumentMatchers.argThat(s -> s != null && "last".equals(s.getId()))))
+                .thenReturn(List.of(ARTIFACT));
+        when(specifications.addDownloadAttachments(any(), any())).thenReturn(true);
 
         assertEquals(2, backfill.run());
 
-        verify(artifacts, never()).describe(already);
-        verify(specifications).addDownloadAttachment("s1", ARTIFACT);
-        verify(specifications).addDownloadAttachment("last", ARTIFACT);
+        verify(artifacts, never()).describeAll(already);
+        verify(specifications).addDownloadAttachments("s1", List.of(ARTIFACT));
+        verify(specifications).addDownloadAttachments("last", List.of(ARTIFACT));
     }
 
     @Test
@@ -64,6 +63,6 @@ class DownloadAttachmentBackfillTest {
         when(artifacts.hasStores()).thenReturn(false);
         assertEquals(0, backfill.run());
         verify(specifications, never()).findAllAiModelSpecifications(any(), anyInt());
-        verify(specifications, never()).addDownloadAttachment(eq("x"), any());
+        verify(specifications, never()).addDownloadAttachments(eq("x"), any());
     }
 }
