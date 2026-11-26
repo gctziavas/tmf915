@@ -15,10 +15,17 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionStatus;
 
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.List;
+
+import org.etsi.osl.controllers.tmf915.model.Characteristic;
+import org.mockito.ArgumentCaptor;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
@@ -154,5 +161,158 @@ public class AiModelLifecycleServiceTest {
         
         verify(scheduler).cancelScheduled("model-1");
         verify(repoService).deleteAiModel("model-1");
+    }
+
+    // ── 5.1: server-owned characteristics are dropped from client input ──
+
+    private static Characteristic characteristic(String name, String value) {
+        Characteristic c = new Characteristic();
+        c.setName(name);
+        c.setValue(value);
+        return c;
+    }
+
+    private static List<String> names(List<Characteristic> characteristics) {
+        return characteristics.stream().map(Characteristic::getName).toList();
+    }
+
+    @Test
+    public void createDropsServerOwnedCharacteristics() {
+        AiModelCreate create = new AiModelCreate();
+        create.setState(ServiceStateType.DESIGNED);
+        create.setName("m");
+        create.setServiceCharacteristic(new ArrayList<>(List.of(
+                characteristic("platform", "mlflow"),
+                characteristic("containerId", "mysql"),
+                characteristic("imageName", "keycloak"),
+                characteristic("endpoint", "http://evil"))));
+        AiModel created = new AiModel();
+        created.setId("model-1");
+        when(repoService.createAiModel(any())).thenReturn(created);
+
+        service.createAiModel(create);
+
+        ArgumentCaptor<AiModelCreate> stored = ArgumentCaptor.forClass(AiModelCreate.class);
+        verify(repoService).createAiModel(stored.capture());
+        assertEquals(List.of("platform"), names(stored.getValue().getServiceCharacteristic()));
+    }
+
+    @Test
+    public void patchDropsServerOwnedCharacteristics() {
+        AiModelUpdate update = new AiModelUpdate();
+        update.setServiceCharacteristic(new ArrayList<>(List.of(
+                characteristic("containerId", "mysql"),
+                characteristic("hostPort", "3306"),
+                characteristic("note", "kept"))));
+        when(repoService.updateAiModel(eq("model-1"), any())).thenReturn(new AiModel());
+
+        service.updateAiModel("model-1", update);
+
+        ArgumentCaptor<AiModelUpdate> stored = ArgumentCaptor.forClass(AiModelUpdate.class);
+        verify(repoService).updateAiModel(eq("model-1"), stored.capture());
+        assertEquals(List.of("note"), names(stored.getValue().getServiceCharacteristic()));
+    }
+
+    @Test
+    public void deployerValidationRejectsTheRequest() {
+        PlatformDeployer strict = mock(PlatformDeployer.class);
+        doThrow(new IllegalArgumentException("dockerHost not allowed"))
+                .when(strict).validateCharacteristics(any());
+        AiModelLifecycleService withDeployer = new AiModelLifecycleService(
+                repoService, specRepoService, scheduler, List.of(strict), transactionManager, eventPublisher);
+
+        AiModelCreate create = new AiModelCreate();
+        create.setState(ServiceStateType.DESIGNED);
+        create.setServiceCharacteristic(new ArrayList<>(List.of(characteristic("dockerHost", "tcp://evil:2375"))));
+
+        assertThrows(IllegalArgumentException.class, () -> withDeployer.createAiModel(create));
+        verify(repoService, never()).createAiModel(any());
+    }
+
+    // ── 5.13: only reserved and inactive may be requested, from sensible states ──
+
+    private void currentState(ServiceStateType state) {
+        AiModel existing = new AiModel();
+        existing.setId("model-1");
+        existing.setState(state);
+        lenient().when(repoService.findAiModelById("model-1")).thenReturn(existing);
+    }
+
+    private void assertRejected(ServiceStateType from, ServiceStateType to) {
+        currentState(from);
+        AiModelUpdate update = new AiModelUpdate();
+        update.setState(to);
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                () -> service.updateAiModel("model-1", update), from + " -> " + to);
+        assertTrue(ex.getMessage().contains("Cannot change the state"), ex.getMessage());
+        verify(repoService, never()).updateAiModel(any(), any());
+        verifyNoInteractions(scheduler);
+    }
+
+    @Test
+    public void patchToActiveIsRejected() {
+        assertRejected(ServiceStateType.DESIGNED, ServiceStateType.ACTIVE);
+    }
+
+    @Test
+    public void patchToTerminatedOnActiveModelIsRejected() {
+        assertRejected(ServiceStateType.ACTIVE, ServiceStateType.TERMINATED);
+    }
+
+    @Test
+    public void patchToDesignedOnActiveModelIsRejected() {
+        assertRejected(ServiceStateType.ACTIVE, ServiceStateType.DESIGNED);
+    }
+
+    @Test
+    public void patchToReservedOnActiveModelIsRejected() {
+        // D6: no implicit redeploy; the client sets inactive first.
+        assertRejected(ServiceStateType.ACTIVE, ServiceStateType.RESERVED);
+    }
+
+    @Test
+    public void patchToInactiveOnDesignedModelIsRejected() {
+        assertRejected(ServiceStateType.DESIGNED, ServiceStateType.INACTIVE);
+    }
+
+    @Test
+    public void patchToReservedFromTerminatedIsAllowed() {
+        currentState(ServiceStateType.TERMINATED);
+        AiModel updated = new AiModel();
+        updated.setId("model-1");
+        when(repoService.updateAiModel(eq("model-1"), any())).thenReturn(updated);
+        when(scheduler.scheduleDeploy(any())).thenReturn(updated);
+        AiModelUpdate update = new AiModelUpdate();
+        update.setState(ServiceStateType.RESERVED);
+
+        service.updateAiModel("model-1", update);
+
+        verify(scheduler).scheduleDeploy(updated);
+    }
+
+    @Test
+    public void patchWithCurrentStateIsAnAttributeUpdate() {
+        // A client that reads an active model and PATCHes it back unchanged must not get 400.
+        currentState(ServiceStateType.ACTIVE);
+        when(repoService.updateAiModel(eq("model-1"), any())).thenReturn(new AiModel());
+        AiModelUpdate update = new AiModelUpdate();
+        update.setState(ServiceStateType.ACTIVE);
+        update.setDescription("changed");
+
+        service.updateAiModel("model-1", update);
+
+        ArgumentCaptor<AiModelUpdate> stored = ArgumentCaptor.forClass(AiModelUpdate.class);
+        verify(repoService).updateAiModel(eq("model-1"), stored.capture());
+        assertNull(stored.getValue().getState());
+        assertEquals("changed", stored.getValue().getDescription());
+        verifyNoInteractions(scheduler);
+    }
+
+    @Test
+    public void patchStateOnUnknownModelIsRejected() {
+        when(repoService.findAiModelById("missing")).thenReturn(null);
+        AiModelUpdate update = new AiModelUpdate();
+        update.setState(ServiceStateType.RESERVED);
+        assertThrows(IllegalArgumentException.class, () -> service.updateAiModel("missing", update));
     }
 }

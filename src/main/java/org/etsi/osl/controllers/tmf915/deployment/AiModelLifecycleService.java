@@ -58,6 +58,27 @@ public class AiModelLifecycleService {
             ServiceStateType.TERMINATED
     );
 
+    /**
+     * Characteristics only a deployer may write (see {@code MlflowModelService.updateModelAfterDeploy}).
+     * Undeploy acts on {@code containerId} and {@code imageName}, so accepting them from clients
+     * would let any user stop or remove arbitrary containers and images on the Docker host.
+     * They are dropped from client input, with an INFO log, so that clients which read a model
+     * and PATCH it back keep working.
+     */
+    static final Set<String> SERVER_OWNED_CHARACTERISTICS = Set.of(
+            "containerId", "imageName", "hostPort", "endpoint", "deployedAt", "inferencePayloadExample");
+
+    /**
+     * States a client may request with PATCH, and the current states each may be requested from.
+     * {@code active} and {@code terminated} are only ever set by the server. Requesting the
+     * model's current state is a no-op, not a transition.
+     */
+    static final Map<ServiceStateType, Set<ServiceStateType>> CLIENT_TRANSITIONS = Map.of(
+            ServiceStateType.RESERVED, Set.of(
+                    ServiceStateType.FEASIBILITY_CHECKED, ServiceStateType.DESIGNED, ServiceStateType.TERMINATED),
+            ServiceStateType.INACTIVE, Set.of(
+                    ServiceStateType.ACTIVE, ServiceStateType.RESERVED));
+
     private final AiModelRepositoryService repoService;
     private final AiModelSpecificationRepositoryService specificationRepositoryService;
     private final DeploymentScheduler scheduler;
@@ -94,6 +115,10 @@ public class AiModelLifecycleService {
                             + ". Allowed states: feasibilityChecked, designed, reserved.");
         }
 
+        aiModelCreate.setServiceCharacteristic(
+                withoutServerOwnedCharacteristics(aiModelCreate.getServiceCharacteristic(), null));
+        validateCharacteristics(aiModelCreate.getServiceCharacteristic());
+
         if (requestedState == ServiceStateType.RESERVED) {
             applyDefaultDates(aiModelCreate);
             enrichCharacteristicsFromSpecification(aiModelCreate);
@@ -124,7 +149,14 @@ public class AiModelLifecycleService {
      * Updates an AiModel and reacts to state transitions.
      */
     public AiModel updateAiModel(String id, AiModelUpdate aiModelUpdate) {
-        ServiceStateType requestedState = aiModelUpdate.getState();
+        // Before anything else: handleDeploy copies the stored characteristics into the update.
+        if (aiModelUpdate.getServiceCharacteristic() != null) {
+            aiModelUpdate.setServiceCharacteristic(
+                    withoutServerOwnedCharacteristics(aiModelUpdate.getServiceCharacteristic(), id));
+            validateCharacteristics(aiModelUpdate.getServiceCharacteristic());
+        }
+
+        ServiceStateType requestedState = checkStateTransition(id, aiModelUpdate);
         log.info("Updating AiModel {} (requestedState={})", id, requestedState);
 
         if (requestedState == ServiceStateType.RESERVED) {
@@ -142,6 +174,66 @@ public class AiModelLifecycleService {
         AiModel updated = repoService.updateAiModel(id, aiModelUpdate);
         eventPublisher.publishEvent(new AiModelDomainEvent(updated, AiModelDomainEvent.EventKind.ATTRIBUTE_VALUE_CHANGE));
         return updated;
+    }
+
+    /**
+     * Validates the requested state change against {@link #CLIENT_TRANSITIONS}.
+     *
+     * @return the state change to act on, or null when there is none (no state in the request,
+     *         or the model's current state, which is then removed from the update)
+     * @throws IllegalArgumentException for a transition clients may not request ({@code 400})
+     */
+    private ServiceStateType checkStateTransition(String id, AiModelUpdate aiModelUpdate) {
+        ServiceStateType requested = aiModelUpdate.getState();
+        if (requested == null) {
+            return null;
+        }
+        AiModel current = repoService.findAiModelById(id);
+        if (current == null) {
+            throw new IllegalArgumentException("No AiModel with ID: " + id);
+        }
+        ServiceStateType currentState = current.getState();
+        if (requested == currentState) {
+            aiModelUpdate.setState(null);
+            return null;
+        }
+        Set<ServiceStateType> allowedFrom = CLIENT_TRANSITIONS.get(requested);
+        if (allowedFrom == null || !allowedFrom.contains(currentState)) {
+            log.warn("Rejected state change of AiModel {} from {} to {}", id, currentState, requested);
+            throw new IllegalArgumentException("Cannot change the state of AiModel " + id + " from "
+                    + currentState + " to " + requested + ". Clients may request reserved (from "
+                    + "feasibilityChecked, designed or terminated) and inactive (from active or reserved); "
+                    + "to redeploy an active model, set it to inactive first.");
+        }
+        return requested;
+    }
+
+    /** Returns the client's characteristics without {@link #SERVER_OWNED_CHARACTERISTICS}. */
+    private static List<Characteristic> withoutServerOwnedCharacteristics(List<Characteristic> characteristics,
+                                                                           String aiModelId) {
+        if (characteristics == null) {
+            return new ArrayList<>();
+        }
+        List<Characteristic> kept = new ArrayList<>(characteristics.size());
+        List<String> dropped = new ArrayList<>();
+        for (Characteristic c : characteristics) {
+            if (c != null && c.getName() != null && SERVER_OWNED_CHARACTERISTICS.contains(c.getName())) {
+                dropped.add(c.getName());
+            } else {
+                kept.add(c);
+            }
+        }
+        if (!dropped.isEmpty()) {
+            log.info("Ignoring server-owned characteristics {} in client request{}", dropped,
+                    aiModelId != null ? " for AiModel " + aiModelId : "");
+        }
+        return kept;
+    }
+
+    private void validateCharacteristics(List<Characteristic> characteristics) {
+        for (PlatformDeployer deployer : deployers) {
+            deployer.validateCharacteristics(characteristics);
+        }
     }
 
     // ── Deploy: RESERVED → schedule build + start container → ACTIVE ────

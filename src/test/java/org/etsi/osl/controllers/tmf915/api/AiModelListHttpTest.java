@@ -39,6 +39,8 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.hamcrest.Matchers.containsString;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -384,6 +386,59 @@ class AiModelListHttpTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.description").value("patched"))
                 .andExpect(jsonPath("$.serviceCharacteristic[0].name").value("platform"));
+    }
+
+    // ── Bug-fix plan PR 1: deployment inputs (handoff 5.1, 5.13) ─────────
+
+    @Test
+    void createWithServerOwnedCharacteristics_storesNoneOfThem() throws Exception {
+        String body = mockMvc.perform(post(BASE + "/aiModel")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"probe\",\"state\":\"designed\",\"aiModelSpecification\":{\"id\":\"spec-0\"},\"software\":[{\"id\":\"mlflow\"}],\"serviceCharacteristic\":["
+                                + "{\"name\":\"platform\",\"value\":\"mlflow\"},"
+                                + "{\"name\":\"containerId\",\"value\":\"tmf915-mysql-1\"},"
+                                + "{\"name\":\"imageName\",\"value\":\"mysql:8.0\"}]}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.serviceCharacteristic", hasSize(1)))
+                .andExpect(jsonPath("$.serviceCharacteristic[0].name").value("platform"))
+                .andReturn().getResponse().getContentAsString();
+        String id = com.jayway.jsonpath.JsonPath.read(body, "$.id");
+
+        mockMvc.perform(get(BASE + "/aiModel/" + id))
+                .andExpect(jsonPath("$.serviceCharacteristic", hasSize(1)));
+    }
+
+    @Test
+    void patchWithServerOwnedCharacteristics_doesNotStoreThem() throws Exception {
+        String id = aiModelRepositoryService.findAiModels(0, 1).get(0).getId();
+        mockMvc.perform(patch(BASE + "/aiModel/" + id)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"serviceCharacteristic\":[{\"name\":\"containerId\",\"value\":\"tmf915-mysql-1\"}]}"))
+                .andExpect(status().isOk());
+
+        String body = mockMvc.perform(get(BASE + "/aiModel/" + id))
+                .andReturn().getResponse().getContentAsString();
+        assertFalse(body.contains("containerId"), body);
+    }
+
+    @Test
+    void createWithDisallowedDockerHost_returns400() throws Exception {
+        mockMvc.perform(post(BASE + "/aiModel")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"probe\",\"state\":\"designed\",\"aiModelSpecification\":{\"id\":\"spec-0\"},\"software\":[{\"id\":\"mlflow\"}],\"serviceCharacteristic\":["
+                                + "{\"name\":\"dockerHost\",\"value\":\"tcp://attacker.example:2375\"}]}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.content()
+                        .string(containsString("mlflow.docker.allowed-hosts")));
+    }
+
+    @Test
+    void patchToActive_returns400() throws Exception {
+        String id = aiModelRepositoryService.findAiModels(0, 1).get(0).getId();
+        mockMvc.perform(patch(BASE + "/aiModel/" + id)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"state\":\"active\"}"))
+                .andExpect(status().isBadRequest());
     }
 
     @Test

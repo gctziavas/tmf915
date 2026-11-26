@@ -97,6 +97,7 @@ Content-Type: application/json
   "name": "fraud-scoring-eu-1",
   "state": "reserved",
   "aiModelSpecification": { "id": "<SPEC_ID>" },
+  "software": [ { "id": "mlflow" } ],
   "startDate": "2026-12-01T08:00:00Z",
   "endDate":   "2026-12-31T23:59:59Z",
   "serviceCharacteristic": [
@@ -109,8 +110,10 @@ Content-Type: application/json
 | Input | Rule |
 |---|---|
 | `state` | `reserved` deploys. `designed` or `feasibilityChecked` only create the record. `active`, `inactive` and `terminated` are rejected with `400`. |
+| `aiModelSpecification`, `software` | Required (`400` otherwise). For `software`, `[{"id": "mlflow"}]` is enough. |
 | `platform` characteristic | **Required to deploy**: it selects the deployer (`mlflow`). Without a matching deployer, the model stays `reserved` and nothing happens. |
-| `dockerHost` characteristic | Optional. The Docker daemon to run on. Default: the server's `mlflow.docker.host`. |
+| `dockerHost` characteristic | Optional. The Docker daemon to run on. Default: the server's `mlflow.docker.host`. Any other value must be in the server's `mlflow.docker.allowed-hosts`; otherwise `400`. |
+| Server-owned characteristics | `containerId`, `imageName`, `hostPort`, `endpoint`, `deployedAt` and `inferencePayloadExample` are written by the server only. If a request contains them (on POST or PATCH), they are dropped without an error, so reading a model and sending it back is safe. |
 | `startDate` / `endDate` | Optional. Default: now, and **now + 1 day**. Deployment starts at `startDate`; the model is torn down at `endDate`. Always set `endDate` for long-lived deployments. |
 | `name` | Optional. Default: `<specName>-v-<specVersion>-<n>`. |
 
@@ -140,6 +143,16 @@ Poll with back-off (for example every 5 s, up to 15 minutes) until `state` is no
 | `PATCH /aiModel/<id>` `{"state":"inactive"}` | Stops the container and removes the image; state becomes `terminated`. |
 | `PATCH /aiModel/<id>` with other fields | Updates them. `serviceCharacteristic` entries are merged by `name`. |
 | `DELETE /aiModel/<id>` | Undeploys if needed, then deletes the record. |
+
+State changes a client may request with `PATCH`; anything else returns `400`:
+
+| Request | Allowed from | Effect |
+|---|---|---|
+| `reserved` | `feasibilityChecked`, `designed`, `terminated` | Schedules a deployment. |
+| `inactive` | `active`, `reserved` | Stops the deployment, or cancels a scheduled one; state becomes `terminated`. |
+| the model's current state | any | No state change; the other fields are updated. |
+
+`active` and `terminated` are set by the server only. There is no implicit redeploy: to redeploy an `active` model, PATCH `inactive`, then `reserved`.
 
 The API restores scheduled work after a restart: `reserved` models are deployed and `active` models keep their teardown at `endDate`.
 

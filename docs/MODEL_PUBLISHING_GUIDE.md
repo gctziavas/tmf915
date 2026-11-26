@@ -141,6 +141,7 @@ API=http://localhost:13082/tmf-api/AiM/v4
 curl -s -X POST "$API/aiModel" -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '{
   "state": "reserved",
   "aiModelSpecification": { "id": "<SPEC_ID>" },
+  "software": [ { "id": "mlflow" } ],
   "serviceCharacteristic": [ { "name": "platform", "valueType": "string", "value": "mlflow" } ]
 }'
 ```

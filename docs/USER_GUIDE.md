@@ -134,6 +134,7 @@ curl -s -X POST "$API/aiModel" \
   -d '{
     "state": "reserved",
     "aiModelSpecification": { "id": "<SPEC_ID>" },
+    "software": [ { "id": "mlflow" } ],
     "serviceCharacteristic": [
       { "name": "platform", "valueType": "string", "value": "mlflow" }
     ]
@@ -144,10 +145,13 @@ curl -s -X POST "$API/aiModel" \
 |---|---|---|
 | `state: "reserved"` | yes, to deploy | `designed` creates the record without deploying; deploy later with `PATCH {"state":"reserved"}`. You cannot create a model as `active`, `inactive` or `terminated`. |
 | `aiModelSpecification.id` | yes | From the catalog. |
+| `software` | yes | At least one entry; `[{"id": "mlflow"}]` is enough. Without it, the request fails with `400`. |
 | `platform = mlflow` | yes | Selects the MLflow deployer. **Without it, the model stays `reserved` and is never deployed.** |
-| `dockerHost` characteristic | no | Docker daemon to run the container on, e.g. `tcp://10.0.0.5:2375`. Default: `mlflow.docker.host` (the local Docker socket in Compose). |
+| `dockerHost` characteristic | no | Docker daemon to run the container on, e.g. `tcp://10.0.0.5:2375`. Default: `mlflow.docker.host` (the local Docker socket in Compose). Any other value must be listed in `mlflow.docker.allowed-hosts`, or the request fails with `400`. |
 | `name` | no | Default: `<specName>-v-<specVersion>-<n>`. |
 | `startDate`, `endDate` | no | Default: now, and **now + 1 day**. The model is undeployed automatically at `endDate`. Set it explicitly to keep a model longer; a future `startDate` schedules the deployment. |
+
+Characteristics the server writes after a deployment (`containerId`, `imageName`, `hostPort`, `endpoint`, `deployedAt`, `inferencePayloadExample`) are ignored if you send them.
 
 The response comes back at once with state `reserved`. Building the serving image can take several minutes. Check progress:
 
@@ -210,6 +214,7 @@ POST state=reserved ────────────────────
 ```
 
 - **Restarts:** after a restart, the API re-schedules `reserved` models and the automatic teardown of `active` ones.
+- **Allowed state changes:** with `PATCH` you can request only `reserved` (from `feasibilityChecked`, `designed` or `terminated`) and `inactive` (from `active` or `reserved`). Anything else returns `400`. To redeploy an active model, set it to `inactive`, then to `reserved`. Sending the model's current state is accepted and changes nothing.
 - **Other changes:** other fields can be changed with `PATCH` at any time. `serviceCharacteristic` entries are merged by `name`.
 
 ---
@@ -230,6 +235,7 @@ Settings live in `src/main/resources/application.yml`. In Docker Compose, overri
 | `mlflow.sync.interval-ms` | `60000` | How often to look for new models. |
 | `mlflow.sync.full-interval-ms` | `600000` | How often to re-read all models (in between, only new ones are fetched). |
 | `mlflow.docker.host` | local socket | Default Docker daemon for deployments. |
+| `mlflow.docker.allowed-hosts` | empty | Other Docker daemons clients may name in the `dockerHost` characteristic, comma-separated (for example `tcp://10.0.0.5:2375,tcp://10.0.0.6:2375`). `mlflow.docker.host` is always allowed. |
 | `mlflow.docker.host-port-start`, `host-port-end` | `3000`–`7000` | Port range for model endpoints. |
 | `mlflow.docker.env-manager` | `local` | Python environment used to build images (`local`, `virtualenv`, `uv`). |
 | `mlflow.docker.command-timeout-seconds` | `30` | Timeout for Docker commands other than the image build. |

@@ -119,6 +119,9 @@ mlflow: # MLflow configuration for AIM915 model management
   docker: # Docker deployment configuration
     # Docker daemon host URI (e.g., tcp://10.0.0.1:2375). Empty = local Docker.
     host: ""
+    # Other Docker daemons clients may name in an AiModel's dockerHost characteristic,
+    # comma-separated. mlflow.docker.host is always allowed; any other value is rejected (400).
+    allowed-hosts: ""
     # Container port that MLflow model serves on
     container-port: 8080
     # Host port range to scan for available ports (inclusive)

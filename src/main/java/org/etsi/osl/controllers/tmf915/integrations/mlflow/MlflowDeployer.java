@@ -5,10 +5,15 @@ import org.etsi.osl.controllers.tmf915.model.AiModel;
 import org.etsi.osl.controllers.tmf915.model.Characteristic;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
+import java.util.Arrays;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Set;
 
 /**
  * MLflow-specific implementation of {@link PlatformDeployer}.
@@ -24,10 +29,59 @@ public class MlflowDeployer implements PlatformDeployer {
     private final MlflowModelService mlflowModelService;
     private final MlflowDeploymentService deploymentService;
 
+    /**
+     * Docker daemons a client may name in the {@code dockerHost} characteristic: the server's
+     * own {@code mlflow.docker.host} plus {@code mlflow.docker.allowed-hosts}. Without this
+     * limit a client could make the server build images, with artifacts fetched using the
+     * server's S3 credentials, on any daemon it names.
+     */
+    private final Set<String> allowedDockerHosts;
+
     public MlflowDeployer(MlflowModelService mlflowModelService,
-                           MlflowDeploymentService deploymentService) {
+                           MlflowDeploymentService deploymentService,
+                           @Value("${mlflow.docker.allowed-hosts:}") String allowedDockerHosts) {
         this.mlflowModelService = mlflowModelService;
         this.deploymentService = deploymentService;
+        this.allowedDockerHosts = parseAllowedHosts(deploymentService.getDockerHost(), allowedDockerHosts);
+    }
+
+    /** Comma-separated list, plus the default host if one is configured. */
+    static Set<String> parseAllowedHosts(String defaultHost, String configured) {
+        Set<String> hosts = new LinkedHashSet<>();
+        String normalisedDefault = sanitizeDockerHost(defaultHost);
+        if (normalisedDefault != null) {
+            hosts.add(normalisedDefault);
+        }
+        if (configured != null) {
+            Arrays.stream(configured.split(","))
+                    .map(MlflowDeployer::sanitizeDockerHost)
+                    .filter(java.util.Objects::nonNull)
+                    .forEach(hosts::add);
+        }
+        return hosts;
+    }
+
+    /**
+     * Rejects a {@code dockerHost} that is not allowed. An absent or empty value is fine: the
+     * deployment then uses {@code mlflow.docker.host}.
+     */
+    @Override
+    public void validateCharacteristics(List<Characteristic> characteristics) {
+        for (Characteristic c : characteristics) {
+            if ("dockerHost".equals(c.getName())) {
+                String requested = c.getValue() != null ? c.getValue().toString() : null;
+                if (!isAllowedDockerHost(requested)) {
+                    throw new IllegalArgumentException("dockerHost '" + requested + "' is not allowed. "
+                            + "Omit it to use the server's default Docker host, or ask the operator to add it "
+                            + "to mlflow.docker.allowed-hosts.");
+                }
+            }
+        }
+    }
+
+    boolean isAllowedDockerHost(String requested) {
+        String normalised = sanitizeDockerHost(requested);
+        return normalised == null || allowedDockerHosts.contains(normalised);
     }
 
     @Override
@@ -38,6 +92,10 @@ public class MlflowDeployer implements PlatformDeployer {
     @Override
     public void deploy(AiModel model) throws IOException {
         String dockerHost = sanitizeDockerHost(getCharacteristicValue(model, "dockerHost"));
+        // Also checked here, not only on create/PATCH, for rows stored before the allow-list existed.
+        if (!isAllowedDockerHost(dockerHost)) {
+            throw new IOException("dockerHost '" + dockerHost + "' is not in mlflow.docker.allowed-hosts");
+        }
 
         // Try new Logged Models path first (mlflowModelId characteristic)
         String modelId = getCharacteristicValue(model, "mlflowModelId");
@@ -97,7 +155,7 @@ public class MlflowDeployer implements PlatformDeployer {
      * Sanitizes the dockerHost URI to prevent injection or malformed connections.
      * Keeps common URI parts (alphanumeric, dots, dashes, colons, slashes, @) and removes potentially dangerous shell characters.
      */
-    private String sanitizeDockerHost(String dockerHost) {
+    static String sanitizeDockerHost(String dockerHost) {
         if (dockerHost == null || dockerHost.trim().isEmpty()) {
             return null;
         }

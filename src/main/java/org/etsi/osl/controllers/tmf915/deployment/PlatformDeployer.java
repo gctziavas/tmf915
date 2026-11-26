@@ -1,8 +1,10 @@
 package org.etsi.osl.controllers.tmf915.deployment;
 
 import org.etsi.osl.controllers.tmf915.model.AiModel;
+import org.etsi.osl.controllers.tmf915.model.Characteristic;
 
 import java.io.IOException;
+import java.util.List;
 
 /**
  * Abstraction for platform-specific deployment operations.
@@ -32,4 +34,16 @@ public interface PlatformDeployer {
      * Does <em>not</em> change the model's persisted state — the caller handles that.
      */
     void undeploy(AiModel model);
+
+    /**
+     * Validates characteristics a client sent on create or update, before anything is stored.
+     * Called for every deployer, whatever the requested platform. Throw
+     * {@link IllegalArgumentException} to reject the request with {@code 400}.
+     * Default: accept everything.
+     *
+     * @param characteristics the client's characteristics (server-owned ones already removed);
+     *                        may be empty, never null
+     */
+    default void validateCharacteristics(List<Characteristic> characteristics) {
+    }
 }
