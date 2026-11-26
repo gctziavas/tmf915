@@ -14,6 +14,9 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -23,9 +26,9 @@ import static org.mockito.Mockito.when;
 class MlflowDeployerUnitTest {
 
     private final MlflowModelService modelService = mock(MlflowModelService.class);
+    private final MlflowDeploymentService deploymentService = mock(MlflowDeploymentService.class);
 
     private MlflowDeployer deployer(String defaultHost, String allowedHosts) {
-        MlflowDeploymentService deploymentService = mock(MlflowDeploymentService.class);
         when(deploymentService.getDockerHost()).thenReturn(defaultHost);
         return new MlflowDeployer(modelService, deploymentService, allowedHosts);
     }
@@ -91,5 +94,78 @@ class MlflowDeployerUnitTest {
 
         assertThrows(IOException.class, () -> deployer.deploy(model));
         verify(modelService, never()).buildAndDeployFromLoggedModel(any(), any(), any(), any());
+    }
+
+    // ── undeploy safeguards (5.1 step 2, 5.10, 5.13 step 2) ──────────────
+
+    private AiModel deployedModel() {
+        AiModel model = new AiModel();
+        model.setId("model-1");
+        model.setName("fraud");
+        model.addServiceCharacteristicItem(characteristic("platform", "mlflow"));
+        model.addServiceCharacteristicItem(characteristic("containerId", "c-1"));
+        model.addServiceCharacteristicItem(characteristic("imageName", "m-8a1e"));
+        model.addServiceCharacteristicItem(characteristic("hostPort", "3000"));
+        model.addServiceCharacteristicItem(characteristic("endpoint", "http://localhost:3000/invocations"));
+        return model;
+    }
+
+    private void ownership(MlflowDeploymentService.ContainerOwnership result) {
+        when(deploymentService.checkOwnership(eq("c-1"), eq("model-1"), any(), any())).thenReturn(result);
+    }
+
+    private static List<String> names(AiModel model) {
+        return model.getServiceCharacteristic().stream().map(Characteristic::getName).toList();
+    }
+
+    @Test
+    void undeploy_doesNotStopAContainerOfSomethingElse() {
+        // A row written before input filtering could hold containerId=<mysql container>.
+        MlflowDeployer deployer = deployer("", "");
+        ownership(MlflowDeploymentService.ContainerOwnership.NOT_OWNED);
+        AiModel model = deployedModel();
+
+        deployer.undeploy(model);
+
+        verify(deploymentService, never()).stopContainer(anyString(), anyBoolean(), any());
+        assertFalse(names(model).contains("containerId"));
+        assertFalse(names(model).contains("endpoint"));
+    }
+
+    @Test
+    void undeploy_stopsOwnedAndLegacyContainers() {
+        for (MlflowDeploymentService.ContainerOwnership o : List.of(
+                MlflowDeploymentService.ContainerOwnership.OWNED,
+                MlflowDeploymentService.ContainerOwnership.LEGACY_NAME_MATCH)) {
+            org.mockito.Mockito.clearInvocations(deploymentService);
+            MlflowDeployer deployer = deployer("", "");
+            ownership(o);
+
+            deployer.undeploy(deployedModel());
+
+            verify(deploymentService).stopContainer("c-1", true, "");
+        }
+    }
+
+    @Test
+    void undeploy_keepsAnImageAnotherModelNeeds() {
+        MlflowDeployer deployer = deployer("", "");
+        ownership(MlflowDeploymentService.ContainerOwnership.OWNED);
+        when(modelService.isImageNeededByAnotherModel(eq("m-8a1e"), any())).thenReturn(true);
+
+        deployer.undeploy(deployedModel());
+
+        verify(deploymentService, never()).removeImage(anyString(), any());
+    }
+
+    @Test
+    void undeploy_removesAnImageNobodyElseNeeds() {
+        MlflowDeployer deployer = deployer("", "");
+        ownership(MlflowDeploymentService.ContainerOwnership.OWNED);
+        when(modelService.isImageNeededByAnotherModel(eq("m-8a1e"), any())).thenReturn(false);
+
+        deployer.undeploy(deployedModel());
+
+        verify(deploymentService).removeImage("m-8a1e", "");
     }
 }

@@ -548,9 +548,12 @@ public class AiModelLifecycleService {
         String base = specVersion != null && !specVersion.isBlank()
                 ? specName + "-v-" + specVersion
                 : specName;
-        long existing = repoService.countByNamePrefix(base + "-");
-        // also check exact base name to account for any legacy entries
-        long count = existing + 1;
-        return base + "-" + count;
+        long n = repoService.countByNamePrefix(base + "-") + 1;
+        // The count alone repeats names: with "-1" and "-2", deleting "-1" makes the count point
+        // at "-2" again. Skip numbers that are taken.
+        while (repoService.existsByName(base + "-" + n)) {
+            n++;
+        }
+        return base + "-" + n;
     }
 }

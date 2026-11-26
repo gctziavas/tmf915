@@ -115,6 +115,11 @@ public class AiModelRepositoryService {
         return aiModelRepository.countByNameStartingWith(prefix);
     }
 
+    @Transactional(readOnly = true)
+    public boolean existsByName(String name) {
+        return aiModelRepository.existsByName(name);
+    }
+
     public AiModel updateAiModelState(String id, ServiceStateType state) {
         log.info("AiModel UPDATE STATE with ID: {} to {}", id, state);
         AiModel aiModel = aiModelRepository.findById(id)

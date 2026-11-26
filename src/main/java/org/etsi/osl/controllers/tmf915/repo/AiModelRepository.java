@@ -15,6 +15,8 @@ public interface AiModelRepository extends CrudRepository<AiModel, String>, Pagi
 
     long countByNameStartingWith(String namePrefix);
 
+    boolean existsByName(String name);
+
     /** One page of models. Returns a List (not a Page) so no count query is issued. */
     List<AiModel> findAllBy(Pageable pageable);
 

@@ -191,7 +191,7 @@ The endpoint is the MLflow model server running in the container. It is **not** 
 ## 6. Stop or delete a model
 
 ```bash
-# Stop: removes the container and image, state becomes terminated (record kept)
+# Stop: removes the container (and the image, unless another model uses it); state becomes terminated (record kept)
 curl -s -X PATCH "$API/aiModel/<MODEL_ID>" -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" -d '{"state":"inactive"}'
 

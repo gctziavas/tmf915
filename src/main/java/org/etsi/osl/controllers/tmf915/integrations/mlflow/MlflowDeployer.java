@@ -120,6 +120,16 @@ public class MlflowDeployer implements PlatformDeployer {
         log.info("AiModel {} deployed successfully", model.getId());
     }
 
+    /**
+     * Stops the model's container and removes its image, with three safeguards (handoff 5.1, 5.10):
+     * <ul>
+     *   <li>the container is touched only if it carries this model's
+     *       {@value MlflowDeploymentService#LABEL_MODEL_ID} label, or, for containers started
+     *       before labels existed, has no label and the name the old scheme gave this model;</li>
+     *   <li>the image is kept while another live model still needs it, and is never force-removed;</li>
+     *   <li>{@code containerId}, {@code hostPort}, {@code endpoint} etc. are removed from the model.</li>
+     * </ul>
+     */
     @Override
     public void undeploy(AiModel model) {
         String containerId = getCharacteristicValue(model, "containerId");
@@ -131,12 +141,33 @@ public class MlflowDeployer implements PlatformDeployer {
                 model.getId(), containerId, imageName, targetHost);
 
         if (containerId != null) {
-            deploymentService.stopContainer(containerId, true, targetHost);
-            log.info("Container {} stopped and removed", containerId);
+            MlflowDeploymentService.ContainerOwnership ownership = deploymentService.checkOwnership(
+                    containerId, model.getId(), MlflowModelService.legacyContainerName(model), targetHost);
+            switch (ownership) {
+                case OWNED -> {
+                    deploymentService.stopContainer(containerId, true, targetHost);
+                    log.info("Container {} stopped and removed", containerId);
+                }
+                case LEGACY_NAME_MATCH -> {
+                    log.warn("Container {} of AiModel {} has no {} label (started before labels were added); "
+                                    + "stopping it because its name matches the old naming scheme",
+                            containerId, model.getId(), MlflowDeploymentService.LABEL_MODEL_ID);
+                    deploymentService.stopContainer(containerId, true, targetHost);
+                }
+                case NOT_FOUND -> log.info("Container {} of AiModel {} no longer exists", containerId, model.getId());
+                case NOT_OWNED -> log.warn("Not stopping container {}: it does not belong to AiModel {}",
+                        containerId, model.getId());
+            }
         }
+
+        MlflowModelService.clearDeploymentCharacteristics(model);
+
         if (imageName != null) {
-            deploymentService.removeImage(imageName, targetHost);
-            log.info("Image {} removed", imageName);
+            if (mlflowModelService.isImageNeededByAnotherModel(imageName, model)) {
+                log.info("Keeping image {}: another AiModel still uses it", imageName);
+            } else {
+                deploymentService.removeImage(imageName, targetHost);
+            }
         }
     }
 

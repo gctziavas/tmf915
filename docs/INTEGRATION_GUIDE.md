@@ -140,7 +140,7 @@ Poll with back-off (for example every 5 s, up to 15 minutes) until `state` is no
 
 | Call | Effect |
 |---|---|
-| `PATCH /aiModel/<id>` `{"state":"inactive"}` | Stops the container and removes the image; state becomes `terminated`. |
+| `PATCH /aiModel/<id>` `{"state":"inactive"}` | Stops the container, and removes the image unless another model still uses it. `containerId`, `hostPort`, `endpoint`, `deployedAt` and `inferencePayloadExample` are removed from the model. State becomes `terminated`. |
 | `PATCH /aiModel/<id>` with other fields | Updates them. `serviceCharacteristic` entries are merged by `name`. |
 | `DELETE /aiModel/<id>` | Undeploys if needed, then deletes the record. |
 
@@ -274,7 +274,7 @@ To add one, for example KServe:
    - Add an `endpoint` characteristic (and any IDs you need to undeploy later) to the model.
    - Set it active with `AiModelRepositoryService.updateAiModelState(id, ACTIVE)`. Characteristics added to the model are saved when the transaction commits.
    - **Throw** on failure: the scheduler then sets the model to `designed` and records your exception message in `note`.
-4. **`undeploy`:** release everything using the IDs you stored. Do not change the state; the caller sets `terminated`. Make it safe to call twice.
+4. **`undeploy`:** release everything using the IDs you stored, after checking that they still belong to this model: characteristics in old rows may have been written by clients. `MlflowDeployer` does this with a container label (`tmf915.aiModelId`). Remove the deployment's characteristics from the model. Do not change the state; the caller sets `terminated`. Make it safe to call twice.
 5. **Specification fields:** if your platform needs extra fields in the specification, add them where specifications are created (see `MlflowSpecificationService`), or create specifications through `POST /aiModelSpecification`.
 
 No change to the controllers, lifecycle service or scheduler is needed. See `MlflowDeployer` for a complete example.

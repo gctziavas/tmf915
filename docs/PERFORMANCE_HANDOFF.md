@@ -48,7 +48,10 @@ Not verified: the running application was never called. That the HTTP layer uses
 - **Part 2: done** and committed. Item 5 was only partly done (not profiled). See "Part 2 outcome" at the end of Part 2.
 - **Part 3: done** and committed (up to `77f162a`). See "Part 3 outcome" at the end of Part 3.
 - **Part 4: not started.** Correctness and configuration issues found while rewriting the documentation (2026-11-26). Nothing is fixed yet; items 4.3 and 4.8 need the owner's decision.
-- **Part 5: in progress**, following [`BUG_FIX_PLAN.md`](BUG_FIX_PLAN.md). PR 1 is done (uncommitted): 5.1 steps 1 and 4, 5.13 step 1. The rest of 5.1 (labels, image removal) and 5.13 (replacing characteristics) belongs to PR 2.
+- **Part 5: in progress**, following [`BUG_FIX_PLAN.md`](BUG_FIX_PLAN.md).
+  - **PR 1:** committed (`14aef6b`): 5.1 steps 1 and 4, 5.13 step 1.
+  - **PR 2:** done, uncommitted: 5.1 steps 2 and 3, 5.2, 5.3, 5.4, 5.10, 5.13 step 2. See "PR 2 outcome" at the end of Part 5.
+  - **Open:** 5.5, 5.6, 5.7, 5.8, 5.9, 5.11, 5.12.
 
 ## Part 1: fix the AiModel list (requested)
 
@@ -530,7 +533,38 @@ Redeploying an active model works today only by accident: the container name is 
 - **Unknown model.** A state change on an unknown id is rejected (`400`, as other unknown-id errors on `aiModel` are today; see 4.4).
 - **Tests:** `AiModelLifecycleServiceTest` (active, terminated, designed, reserved on active, inactive on designed, reserved from terminated, same-state, unknown id), `AiModelListHttpTest.patchToActive_returns400`.
 - **Docs updated:** `USER_GUIDE.md` section 7; `INTEGRATION_GUIDE.md` 4.4.
-- **Still open (PR 2):** step 2, replacing server-owned characteristics instead of appending them.
+- **Still open (PR 2):** step 2, replacing server-owned characteristics instead of appending them. Done in PR 2; see below.
+
+### PR 2 outcome (5.1 steps 2 and 3, 5.2, 5.3, 5.4, 5.10, 5.13 step 2)
+
+| Item | Change | Verified by |
+|---|---|---|
+| 5.4 | New `ProcessRunner` interface and `SystemProcessRunner`: stdout and stderr are drained on their own threads, the last 1 MB of each is kept, and on timeout the **whole process tree** is killed. Killing only the parent left children (for example the `docker build` under `mlflow models build-docker`) holding the pipes open. `MlflowDeploymentService` runs every Docker and MLflow command through it; it takes the runner in its constructor. | `SystemProcessRunnerTest`: 2 MB on each stream finishes at once; `sleep 30` with a 300 ms timeout returns in well under a second; stdout and stderr stay separate. |
+| 5.3 (D3) | `deployContainer` moves to the next port only when the output contains `port is already allocated` or `address already in use`. Any other error, or a timeout, fails at once. | `MlflowDeploymentServiceUnitTest` with `FakeProcessRunner`: "image not found" makes exactly one `docker run`; two conflicts, then success on the third port; a timeout is not retried. |
+| 5.2 | Container names are `<name>-<id8>` (`MlflowModelService.generateContainerName`). Every `docker run` gets a `tmf915.deployAttempt=<uuid>` label; after a failure, only containers with that label are removed (`docker ps -aq --filter label=…`, then `rm -f <id>`), never by name. `deriveUniqueName` skips numbers that are taken (`AiModelRepository.existsByName`). | Unit tests: same name, different ids give different container names; a failed run removes only the attempt's container, never `shared-name`; derived name skips a taken number. |
+| 5.1 step 2 | Every container gets `tmf915.aiModelId=<id>`. `MlflowDeploymentService.checkOwnership` reads the label (`docker inspect --format '{{index .Config.Labels "tmf915.aiModelId"}}|{{.Name}}'`). It returns `OWNED`, `NOT_OWNED`, `NOT_FOUND`, or, for unlabelled containers whose name equals the old scheme's name (`MlflowModelService.legacyContainerName`, read from the stored specification reference so it works on detached models), `LEGACY_NAME_MATCH`. `MlflowDeployer.undeploy` stops only `OWNED` and `LEGACY_NAME_MATCH` (with a warning). **Remove the legacy fallback in a later release.** | `MlflowDeploymentServiceUnitTest` (all outcomes, including a MySQL container), `MlflowDeployerUnitTest` (`NOT_OWNED` never calls stop). |
+| 5.1 step 3, 5.10 | `docker rmi` without `-f`. Undeploy keeps the image while another `active` model has the same `imageName`, or a `reserved` model has the same `mlflowModelId` (`MlflowModelService.isImageNeededByAnotherModel`). | `MlflowModelServiceUnitTest`, `MlflowDeployerUnitTest`. |
+| 5.13 step 2 | Deploy results replace existing characteristics with the same name, updating the existing entity in place, instead of appending. Undeploy removes `containerId`, `hostPort`, `endpoint`, `deployedAt` and `inferencePayloadExample` (`MlflowModelService.clearDeploymentCharacteristics`). `imageName` and `dockerHost` are kept. | `MlflowModelServiceUnitTest`: a redeploy leaves exactly one `containerId`, the new one. |
+
+**Checked against a real Docker daemon** (Docker 29.6.2, this machine, a throwaway test with `axllent/mailpit` on ports 39000–39003, removed afterwards):
+
+- **Port conflict:** Docker's message is "…Bind for 0.0.0.0:39000 failed: port is already allocated", which the check matches. A second container moved to 39001, and the failed attempt left no container behind.
+- **Ownership:** `checkOwnership` returned `OWNED`, `NOT_OWNED`, `LEGACY_NAME_MATCH` (unlabelled, matching name), `NOT_OWNED` (unlabelled, other name) and `NOT_FOUND`, as expected.
+- **Isolation:** stopping one container left the other running.
+- **Images:** `docker rmi` of an image in use was refused.
+
+Not checked: a real MLflow build, and the plan's manual check (two models with the same name deployed through the API, one undeployed, the other still answering), which needs MLflow.
+
+**Client-visible:**
+
+- **Container names:** `<name>-<id8>` instead of `<name>-v<version>`.
+- **Stopped models:** they no longer show `endpoint` or `containerId`.
+- **Images:** an image used by another model is kept.
+- **Port errors:** a non-port `docker run` error fails the deployment within seconds, instead of after scanning up to 4,001 ports.
+
+**Docs updated:** `AI_MODEL_DEPLOYMENT_FLOW.md` section 3, `INTEGRATION_GUIDE.md` 4.4 and section 7, `USER_GUIDE.md` section 6.
+
+`mvn clean test`: 272 tests, all passing.
 
 ## Related bugs, not performance
 

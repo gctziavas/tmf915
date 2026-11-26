@@ -24,13 +24,14 @@ No change to the API is needed per model.
 
 Your model is published, and deploys correctly, if all of these hold:
 
-| | Requirement | Why |
-|---|---|---|
-| 1 | Logged with an MLflow 3 flavor's `log_model` (`mlflow.sklearn.log_model`, `mlflow.pyfunc.log_model`, …) to the **tracking server the API uses** | The API discovers MLflow 3 *logged models*. Models in the classic Model Registry are picked up only when the server has no logged models at all. |
-| 2 | Artifacts uploaded to the **MinIO/S3** store the API is configured with | Models without artifacts are skipped (and retried every 10 minutes). |
-| 3 | Experiment named meaningfully with `mlflow.set_experiment(...)` | The experiment name becomes the specification's **name** in the catalog. |
-| 4 | A **signature** or **input example** logged with the model | The API generates the example request body (`inferencePayloadExample`) from it. Without one, users get a placeholder they cannot use. |
-| 5 | The model can be served by `mlflow models build-docker` | This is how the API builds the serving image. Anything `mlflow models serve` can serve works. |
+
+|   | Requirement                                                                                                                                     | Why                                                                                                                                             |
+| - | ----------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1 | Logged with an MLflow 3 flavor's`log_model` (`mlflow.sklearn.log_model`, `mlflow.pyfunc.log_model`, …) to the **tracking server the API uses** | The API discovers MLflow 3*logged models*. Models in the classic Model Registry are picked up only when the server has no logged models at all. |
+| 2 | Artifacts uploaded to the**MinIO/S3** store the API is configured with                                                                          | Models without artifacts are skipped (and retried every 10 minutes).                                                                            |
+| 3 | Experiment named meaningfully with`mlflow.set_experiment(...)`                                                                                  | The experiment name becomes the specification's**name** in the catalog.                                                                         |
+| 4 | A **signature** or **input example** logged with the model                                                                                     | The API generates the example request body (`inferencePayloadExample`) from it. Without one, users get a placeholder they cannot use.           |
+| 5 | The model can be served by`mlflow models build-docker`                                                                                          | This is how the API builds the serving image. Anything`mlflow models serve` can serve works.                                                    |
 
 Recommended: pass a `config.version` (or `config.model`) entry in `params` to become the catalog **description**, log the evaluation metrics you want consumers to see, and pin your dependencies (`pip_requirements`) so the image builds reproducibly.
 
@@ -86,37 +87,35 @@ Notes on the example:
 - **`params`:** the values passed to `log_model(params=...)` are stored on the logged model, which is where the API reads them. Parameters logged only to the run with `mlflow.log_param` may not reach the catalog.
 - **Pandas input:** training on a DataFrame gives the signature real column names, so the example request body uses them.
 
----
-
 ## 3. What ends up in the catalog
 
 Each logged model becomes one `aiModelSpecification`:
 
-| Catalog field | Comes from |
-|---|---|
-| `name` | Experiment name |
-| `version` | Logged model id (`m-…`) |
-| `description` | Param `config.version`; else `"MLflow logged model: <config.model> (<id>)"`; else `"MLflow logged model: <id>"` |
-| `modelDataSheet` | Artifact URI |
+
+| Catalog field    | Comes from                                                                                                     |
+| ---------------- | -------------------------------------------------------------------------------------------------------------- |
+| `name`           | Experiment name                                                                                                |
+| `version`        | Logged model id (`m-…`)                                                                                       |
+| `description`    | Param`config.version`; else `"MLflow logged model: <config.model> (<id>)"`; else `"MLflow logged model: <id>"` |
+| `modelDataSheet` | Artifact URI                                                                                                   |
 
 And these `specCharacteristic` entries:
 
-| Characteristic | Content |
-|---|---|
-| `loggedModelId`, `experimentId`, `runId` | MLflow identifiers (`loggedModelId` is what deployment uses) |
-| `modelName` | The `name` given to `log_model` |
-| `modelType` | Model type, if set |
-| `artifactUri` | Where the artifacts are stored |
-| `mlflowUrl` | Link to the model in the MLflow UI |
-| `creationTimestamp`, `lastUpdatedTimestamp` | Epoch milliseconds |
-| `param_<key>` | Every param on the logged model |
-| `metric_<key>` | Metrics whose name contains `accuracy`, `precision`, `recall`, `f1`, `auc`, `loss`, `mse`, `rmse`, `mae`, `r2` or `score`; others are not shown |
-| `tags` | Logged-model tags as `key=value, …` |
-| `model_file_exists` | Set to `true`/`false` after a deployment attempt |
+
+| Characteristic                              | Content                                                                                                                                        |
+| ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `loggedModelId`, `experimentId`, `runId`    | MLflow identifiers (`loggedModelId` is what deployment uses)                                                                                   |
+| `modelName`                                 | The`name` given to `log_model`                                                                                                                 |
+| `modelType`                                 | Model type, if set                                                                                                                             |
+| `artifactUri`                               | Where the artifacts are stored                                                                                                                 |
+| `mlflowUrl`                                 | Link to the model in the MLflow UI                                                                                                             |
+| `creationTimestamp`, `lastUpdatedTimestamp` | Epoch milliseconds                                                                                                                             |
+| `param_<key>`                               | Every param on the logged model                                                                                                                |
+| `metric_<key>`                              | Metrics whose name contains`accuracy`, `precision`, `recall`, `f1`, `auc`, `loss`, `mse`, `rmse`, `mae`, `r2` or `score`; others are not shown |
+| `tags`                                      | Logged-model tags as`key=value, …`                                                                                                            |
+| `model_file_exists`                         | Set to`true`/`false` after a deployment attempt                                                                                                |
 
 The catalog entry is created once and not updated afterwards. Changing params or tags on an existing logged model in MLflow does not change the catalog; log a new model instead.
-
----
 
 ## 4. Check that your model was published
 
@@ -130,8 +129,6 @@ curl -s -H "Authorization: Bearer $TOKEN" \
 ```
 
 Note the `id`; you need it to deploy. If the model doesn't appear, see [troubleshooting](#7-troubleshooting).
-
----
 
 ## 5. Deploy and call it
 
@@ -164,23 +161,20 @@ curl -s -X POST "<endpoint>" -H "Content-Type: application/json" \
 
 The endpoint is the standard MLflow scoring server, so every input format it accepts works (`dataframe_split`, `dataframe_records`, `instances`, `inputs`). The [user guide](USER_GUIDE.md#4-deploy-a-model) covers deployment options, such as which Docker host to use and how long the model stays up.
 
----
-
 ## 6. Publishing a new version
 
 Log the model again, in the same experiment. Each `log_model` call creates a new logged model with a new id, so it appears as a **new specification** with the same `name` and a new `version`. Existing specifications and running deployments are not affected.
 
 To remove a version from the catalog: `DELETE /aiModelSpecification/<SPEC_ID>`. Also delete the logged model in MLflow: otherwise it is published again the next time the API restarts.
 
----
-
 ## 7. Troubleshooting
 
-| Symptom | Cause and fix |
-|---|---|
-| Model never appears in the catalog | It was logged to a different MLflow server than the API's `mlflow.tracking-uri`; or its artifacts are not in MinIO (log: `no artifacts were found … Backing off for 10 minutes`); or it is only in the classic Model Registry while the server also has logged models. |
-| Catalog `description` is generic | `config.version` was not passed in `log_model(params=...)`. |
-| `inferencePayloadExample` contains `WARNING: Could not extract signature` | No signature was logged. Log the model again with `signature=` or `input_example=`. |
-| Deployment goes back to `designed`, note "model files not found" | Artifacts missing or unreadable in MinIO. Check the bucket in the MinIO console (http://localhost:9011). |
-| Deployment goes back to `designed`, note "Build failed" | `mlflow models build-docker` could not build your environment, usually an unpinned or unavailable dependency. Run `mlflow models build-docker -m <artifactUri> -n test` yourself to see the error, and pin versions with `pip_requirements=`. |
-| Endpoint returns `400` | The request body doesn't match the signature. Start from `inferencePayloadExample` and replace the placeholder values. |
+
+| Symptom                                                                   | Cause and fix                                                                                                                                                                                                                                                          |
+| ------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Model never appears in the catalog                                        | It was logged to a different MLflow server than the API's`mlflow.tracking-uri`; or its artifacts are not in MinIO (log: `no artifacts were found … Backing off for 10 minutes`); or it is only in the classic Model Registry while the server also has logged models. |
+| Catalog`description` is generic                                           | `config.version` was not passed in `log_model(params=...)`.                                                                                                                                                                                                            |
+| `inferencePayloadExample` contains `WARNING: Could not extract signature` | No signature was logged. Log the model again with`signature=` or `input_example=`.                                                                                                                                                                                     |
+| Deployment goes back to`designed`, note "model files not found"           | Artifacts missing or unreadable in MinIO. Check the bucket in the MinIO console (http://localhost:9011).                                                                                                                                                               |
+| Deployment goes back to`designed`, note "Build failed"                    | `mlflow models build-docker` could not build your environment, usually an unpinned or unavailable dependency. Run `mlflow models build-docker -m <artifactUri> -n test` yourself to see the error, and pin versions with `pip_requirements=`.                          |
+| Endpoint returns`400`                                                     | The request body doesn't match the signature. Start from`inferencePayloadExample` and replace the placeholder values.                                                                                                                                                  |

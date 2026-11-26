@@ -315,4 +315,31 @@ public class AiModelLifecycleServiceTest {
         update.setState(ServiceStateType.RESERVED);
         assertThrows(IllegalArgumentException.class, () -> service.updateAiModel("missing", update));
     }
+
+    // ── 5.2: derived names never repeat ─────────────────────────────────
+
+    @Test
+    public void derivedNameSkipsNamesThatAreTaken() {
+        org.etsi.osl.controllers.tmf915.model.AiModelSpecification spec =
+                new org.etsi.osl.controllers.tmf915.model.AiModelSpecification();
+        spec.setId("spec-1");
+        spec.setName("fraud");
+        spec.setVersion("m-8a1e");
+        when(specRepoService.findAiModelSpecificationById("spec-1")).thenReturn(spec);
+        // "-1" was deleted, "-2" still exists: count is 1, so the count alone would pick "-2" again.
+        when(repoService.countByNamePrefix("fraud-v-m-8a1e-")).thenReturn(1L);
+        when(repoService.existsByName("fraud-v-m-8a1e-2")).thenReturn(true);
+        when(repoService.createAiModel(any())).thenAnswer(inv -> {
+            AiModel m = new AiModel();
+            m.setId("new");
+            m.setName(((AiModelCreate) inv.getArgument(0)).getName());
+            return m;
+        });
+
+        AiModelCreate create = new AiModelCreate();
+        create.setState(ServiceStateType.DESIGNED);
+        create.setAiModelSpecification(spec);
+
+        assertEquals("fraud-v-m-8a1e-3", service.createAiModel(create).getName());
+    }
 }

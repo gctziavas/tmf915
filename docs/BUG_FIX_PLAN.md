@@ -27,7 +27,9 @@ Outcome: see the handoff, 5.1 and 5.13. `mvn clean test`: 245 tests, all passing
 - Small and self-contained, so it can merge first. It closes the "delete any container" hole for new writes.
 - Client-visible: `dockerHost` outside the allow-list now returns `400`; PATCHing `containerId` etc. has no effect; `PATCH state=active`/`terminated` and other unsupported transitions return `400`.
 
-### PR 2: rewrite the Docker command layer (5.4, 5.2, 5.3, 5.1 step 2, 5.13 step 2, 5.10)
+### PR 2: rewrite the Docker command layer (5.4, 5.2, 5.3, 5.1 step 2, 5.13 step 2, 5.10) — done, uncommitted
+
+Outcome: see "PR 2 outcome" in the handoff, Part 5. `mvn clean test`: 272 tests, all passing. Parts were also checked against a real Docker daemon; the manual check below is still open.
 
 All of these live in `MlflowDeploymentService` and `MlflowModelService`. One PR avoids rewriting the same methods three times.
 

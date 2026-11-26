@@ -7,10 +7,13 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
+import java.time.Duration;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
-import java.util.concurrent.TimeUnit;
+import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -24,8 +27,11 @@ import java.util.regex.Pattern;
  *   <li><b>Stop</b> – {@code docker stop / docker rm} tears down the container</li>
  * </ol>
  *
- * All Docker interaction is done via shell subprocess calls,
- * exactly like the Python reference implementation.
+ * All Docker interaction runs as subprocesses (no shell) through a {@link ProcessRunner}.
+ *
+ * <p>Every container is started with two labels: {@value #LABEL_MODEL_ID} (the AiModel it
+ * belongs to, checked before it is stopped) and {@value #LABEL_ATTEMPT} (one value per
+ * {@code docker run}, used to remove only what a failed attempt created).
  */
 @Service
 @ConditionalOnProperty(name = "mlflow.enabled", havingValue = "true")
@@ -34,6 +40,19 @@ public class MlflowDeploymentService {
     private static final Logger log = LoggerFactory.getLogger(MlflowDeploymentService.class);
 
     private static final Pattern DOCKER_HOST_PATTERN = Pattern.compile("tcp://([^:]+):");
+
+    /** Container label holding the id of the AiModel the container serves. */
+    public static final String LABEL_MODEL_ID = "tmf915.aiModelId";
+
+    /** Container label unique to one {@code docker run} attempt. */
+    public static final String LABEL_ATTEMPT = "tmf915.deployAttempt";
+
+    private static final Duration BUILD_TIMEOUT = Duration.ofMinutes(10);
+
+    /** How much command output goes into error messages. */
+    private static final int ERROR_OUTPUT_CHARS = 2000;
+
+    private final ProcessRunner processRunner;
 
     @Value("${mlflow.tracking-uri}")
     private String trackingUri;
@@ -64,6 +83,10 @@ public class MlflowDeploymentService {
 
     @Value("${mlflow.s3-secret-key:}")
     private String s3SecretKey;
+
+    public MlflowDeploymentService(ProcessRunner processRunner) {
+        this.processRunner = processRunner;
+    }
 
     // ── Build ───────────────────────────────────────────────────────────
 
@@ -110,51 +133,40 @@ public class MlflowDeploymentService {
                 ? new String[]{envManager, "virtualenv"}
                 : new String[]{envManager};
 
-        Exception lastError = null;
+        String lastError = null;
         for (String mgr : managersToTry) {
-            List<String> cmd = new ArrayList<>();
-            cmd.add("mlflow");
-            cmd.add("models");
-            cmd.add("build-docker");
-            cmd.add("--model-uri");
-            cmd.add(modelUri);
-            cmd.add("--name");
-            cmd.add(imageName);
-            cmd.add("--env-manager");
-            cmd.add(mgr);
-            cmd.add("--enable-mlserver");
+            List<String> cmd = List.of("mlflow", "models", "build-docker",
+                    "--model-uri", modelUri,
+                    "--name", imageName,
+                    "--env-manager", mgr,
+                    "--enable-mlserver");
 
+            Map<String, String> env = new HashMap<>();
+            env.put("MLFLOW_TRACKING_URI", trackingUri);
+            applyDockerHost(env, targetHost);
+            applyS3Env(env);
+
+            log.debug("Executing: {}", String.join(" ", cmd));
             try {
-                ProcessBuilder pb = new ProcessBuilder(cmd);
-                Map<String, String> env = pb.environment();
-                env.put("MLFLOW_TRACKING_URI", trackingUri);
-                applyDockerHost(env, targetHost);
-                applyS3Env(env);
-
-                log.debug("Executing: {}", String.join(" ", cmd));
-                Process process = pb.start();
-                boolean finished = process.waitFor(10, TimeUnit.MINUTES);
-                if (!finished) {
-                    process.destroyForcibly();
-                    lastError = new IOException("Build timed out after 10 minutes");
-                    continue;
-                }
-                if (process.exitValue() == 0) {
+                ProcessRunner.ProcessResult result = processRunner.run(cmd, env, BUILD_TIMEOUT);
+                if (result.succeeded()) {
                     log.info("Docker image '{}' built successfully (env_manager={})", imageName, mgr);
                     return new BuildResult(imageName, modelUri, targetHost, true,
                             "Docker image built successfully (env_manager=" + mgr + ")");
                 }
-                String stderr = new String(process.getErrorStream().readAllBytes());
-                lastError = new IOException("Build failed (exit " + process.exitValue() + "): " + stderr);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                throw new IOException("Build interrupted", e);
+                lastError = result.timedOut()
+                        ? "Build timed out after " + BUILD_TIMEOUT.toMinutes() + " minutes"
+                        : "Build failed (exit " + result.exitCode() + "): " + result.outputTail(ERROR_OUTPUT_CHARS);
+                log.warn("Image build with env_manager={} failed: {}", mgr, lastError);
             } catch (IOException e) {
-                lastError = e;
+                if (Thread.currentThread().isInterrupted()) {
+                    throw new IOException("Build interrupted", e);
+                }
+                lastError = e.getMessage();
             }
         }
 
-        String msg = "Build failed: " + (lastError != null ? lastError.getMessage() : "unknown error");
+        String msg = "Build failed: " + (lastError != null ? lastError : "unknown error");
         log.error(msg);
         return new BuildResult(imageName, modelUri, targetHost, false, msg);
     }
@@ -171,12 +183,8 @@ public class MlflowDeploymentService {
      */
     public boolean imageExists(String imageName, String targetHost) {
         try {
-            ProcessBuilder pb = new ProcessBuilder("docker", "image", "inspect", imageName);
-            applyDockerHost(pb.environment(), targetHost);
-            Process process = pb.start();
-            boolean finished = process.waitFor(commandTimeoutSeconds, TimeUnit.SECONDS);
-            return finished && process.exitValue() == 0;
-        } catch (IOException | InterruptedException e) {
+            return docker(targetHost, "image", "inspect", imageName).succeeded();
+        } catch (IOException e) {
             return false;
         }
     }
@@ -194,102 +202,160 @@ public class MlflowDeploymentService {
      * @throws IOException if no port is available or docker commands fail
      */
     public DeployResult deployContainer(String imageName, String containerName) throws IOException {
-        return deployContainer(imageName, containerName, null, dockerHost);
+        return deployContainer(imageName, containerName, null, dockerHost, null);
     }
 
     /**
      * Deploys a container on a specific host port.
      */
     public DeployResult deployContainer(String imageName, String containerName, Integer hostPort) throws IOException {
-        return deployContainer(imageName, containerName, hostPort, dockerHost);
+        return deployContainer(imageName, containerName, hostPort, dockerHost, null);
+    }
+
+    /**
+     * Deploys a container that is not tied to an AiModel (no {@value #LABEL_MODEL_ID} label).
+     */
+    public DeployResult deployContainer(String imageName, String containerName,
+                                        Integer hostPort, String targetHost) throws IOException {
+        return deployContainer(imageName, containerName, hostPort, targetHost, null);
     }
 
     /**
      * Deploys a container to a specific Docker host, scanning ports if hostPort is null.
      *
+     * <p>Only a port conflict moves on to the next port; any other failure (missing image,
+     * unreachable daemon, name in use) fails at once. After a failed attempt, only the
+     * container that attempt created is removed, found by its {@value #LABEL_ATTEMPT} label;
+     * nothing is ever removed by name.
+     *
      * @param imageName     Docker image name
      * @param containerName Optional container name
      * @param hostPort      Specific host port, or null to scan range
      * @param targetHost    Docker host URI, or null/empty for local
+     * @param aiModelId     AiModel the container serves, stored as {@value #LABEL_MODEL_ID}; may be null
      * @return DeployResult with container ID and endpoint
-     * @throws IOException if deployment fails on all ports
+     * @throws IOException if the container could not be started
      */
     public DeployResult deployContainer(String imageName, String containerName,
-                                        Integer hostPort, String targetHost) throws IOException {
+                                        Integer hostPort, String targetHost, String aiModelId) throws IOException {
 
-        int[] portsToTry;
-        if (hostPort != null) {
-            portsToTry = new int[]{hostPort};
-        } else {
-            portsToTry = new int[hostPortEnd - hostPortStart + 1];
-            for (int i = 0; i < portsToTry.length; i++) {
-                portsToTry[i] = hostPortStart + i;
-            }
-        }
+        int firstPort = hostPort != null ? hostPort : hostPortStart;
+        int lastPort = hostPort != null ? hostPort : hostPortEnd;
 
         String lastError = null;
-        for (int port : portsToTry) {
-            List<String> cmd = new ArrayList<>();
-            cmd.add("docker");
-            cmd.add("run");
-            cmd.add("-d");
-            cmd.add("-p");
-            cmd.add("0.0.0.0:" + port + ":" + containerPort);
-            
+        for (int port = firstPort; port <= lastPort; port++) {
+            String attempt = UUID.randomUUID().toString();
+            List<String> cmd = new ArrayList<>(List.of("docker", "run", "-d",
+                    "-p", "0.0.0.0:" + port + ":" + containerPort,
+                    "--label", LABEL_ATTEMPT + "=" + attempt));
+            if (aiModelId != null && !aiModelId.isEmpty()) {
+                cmd.add("--label");
+                cmd.add(LABEL_MODEL_ID + "=" + aiModelId);
+            }
             if (containerName != null && !containerName.isEmpty()) {
                 cmd.add("--name");
                 cmd.add(containerName);
             }
             cmd.add(imageName);
 
-            try {
-                ProcessBuilder pb = new ProcessBuilder(cmd);
-                applyDockerHost(pb.environment(), targetHost);
-                pb.redirectErrorStream(false);
-
-                Process process = pb.start();
-                boolean finished = process.waitFor(commandTimeoutSeconds, TimeUnit.SECONDS);
-                if (!finished) {
-                    process.destroyForcibly();
-                    lastError = "Docker command timed out on port " + port;
-                    if (containerName != null && !containerName.isEmpty()) {
-                        try {
-                            ProcessBuilder rmPb = new ProcessBuilder("docker", "rm", "-f", containerName);
-                            applyDockerHost(rmPb.environment(), targetHost);
-                            rmPb.start().waitFor(10, TimeUnit.SECONDS);
-                        } catch (Exception ignored) {}
-                    }
-                    continue;
-                }
-                if (process.exitValue() != 0) {
-                    lastError = new String(process.getErrorStream().readAllBytes()).trim();
-                    if (containerName != null && !containerName.isEmpty()) {
-                        try {
-                            ProcessBuilder rmPb = new ProcessBuilder("docker", "rm", "-f", containerName);
-                            applyDockerHost(rmPb.environment(), targetHost);
-                            rmPb.start().waitFor(10, TimeUnit.SECONDS);
-                        } catch (Exception ignored) {}
-                    }
-                    continue;
-                }
-
-                String containerId = new String(process.getInputStream().readAllBytes()).trim();
-                String endpointHost = resolveEndpointHost(targetHost);
-                String endpoint = "http://" + endpointHost + ":" + port;
-
+            ProcessRunner.ProcessResult result = processRunner.run(cmd, dockerEnv(targetHost), commandTimeout());
+            if (result.succeeded()) {
+                String containerId = lastLine(result.stdout());
+                String endpoint = "http://" + resolveEndpointHost(targetHost) + ":" + port;
                 log.info("Container deployed: image={}, port={}, endpoint={}", imageName, port, endpoint);
                 return new DeployResult(containerId, endpoint, imageName, true,
                         "Container deployed successfully on port " + port, targetHost, port);
-
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                throw new IOException("Deploy interrupted", e);
             }
+
+            lastError = result.timedOut()
+                    ? "docker run timed out after " + commandTimeoutSeconds + " s on port " + port
+                    : result.outputTail(ERROR_OUTPUT_CHARS);
+            removeAttemptContainers(attempt, targetHost);
+
+            if (result.timedOut() || !isPortConflict(result)) {
+                break;
+            }
+            log.debug("Port {} is in use, trying the next one", port);
         }
 
-        String msg = "Deployment failed on all attempted ports: " + lastError;
+        String msg = "Container failed to start: " + lastError;
         log.error(msg);
         throw new IOException(msg);
+    }
+
+    /** Docker's messages for a host port that is already taken. */
+    static boolean isPortConflict(ProcessRunner.ProcessResult result) {
+        String output = result.combinedOutput().toLowerCase(Locale.ROOT);
+        return output.contains("port is already allocated") || output.contains("address already in use");
+    }
+
+    /**
+     * Removes the containers a failed {@code docker run} created. Docker creates the container
+     * before it binds the port, so a port conflict leaves one behind in "Created" state.
+     */
+    private void removeAttemptContainers(String attempt, String targetHost) {
+        try {
+            ProcessRunner.ProcessResult ps = docker(targetHost,
+                    "ps", "-aq", "--filter", "label=" + LABEL_ATTEMPT + "=" + attempt);
+            for (String id : ps.stdout().split("\\s+")) {
+                if (!id.isBlank()) {
+                    docker(targetHost, "rm", "-f", id.strip());
+                }
+            }
+        } catch (IOException e) {
+            log.warn("Could not clean up after failed docker run (attempt {}): {}", attempt, e.getMessage());
+        }
+    }
+
+    // ── Ownership ───────────────────────────────────────────────────────
+
+    /** Whether a container may be stopped on behalf of an AiModel. */
+    public enum ContainerOwnership {
+        /** Labelled with this AiModel's id. */
+        OWNED,
+        /** No label, but named as the pre-label naming scheme named this model's container. */
+        LEGACY_NAME_MATCH,
+        /** Belongs to something else; must not be touched. */
+        NOT_OWNED,
+        /** No such container (already removed). */
+        NOT_FOUND
+    }
+
+    /**
+     * Checks a container against an AiModel before it is stopped or removed.
+     *
+     * @param legacyName the name the pre-label scheme gave this model's container, or null.
+     *                   Accepted only for containers without a {@value #LABEL_MODEL_ID} label,
+     *                   which were started before labels existed. Remove in a later release.
+     */
+    public ContainerOwnership checkOwnership(String containerId, String aiModelId, String legacyName,
+                                             String targetHost) {
+        try {
+            ProcessRunner.ProcessResult result = docker(targetHost, "inspect", "--format",
+                    "{{index .Config.Labels \"" + LABEL_MODEL_ID + "\"}}|{{.Name}}", containerId);
+            if (!result.succeeded()) {
+                return ContainerOwnership.NOT_FOUND;
+            }
+            String out = lastLine(result.stdout());
+            int bar = out.lastIndexOf('|');
+            String label = bar >= 0 ? out.substring(0, bar).strip() : "";
+            String name = bar >= 0 ? out.substring(bar + 1).strip() : out.strip();
+            if (name.startsWith("/")) {
+                name = name.substring(1);
+            }
+
+            boolean unlabelled = label.isEmpty() || "<no value>".equals(label);
+            if (!unlabelled) {
+                return label.equals(aiModelId) ? ContainerOwnership.OWNED : ContainerOwnership.NOT_OWNED;
+            }
+            if (legacyName != null && legacyName.equals(name)) {
+                return ContainerOwnership.LEGACY_NAME_MATCH;
+            }
+            return ContainerOwnership.NOT_OWNED;
+        } catch (IOException e) {
+            log.warn("Could not inspect container {}: {}", containerId, e.getMessage());
+            return ContainerOwnership.NOT_OWNED;
+        }
     }
 
     // ── Stop / Remove ───────────────────────────────────────────────────
@@ -306,25 +372,20 @@ public class MlflowDeploymentService {
     }
 
     /**
-     * Stops a running container on a specific Docker host.
+     * Stops a running container on a specific Docker host. Callers acting for an AiModel must
+     * check {@link #checkOwnership} first.
      */
     public boolean stopContainer(String containerId, boolean remove, String targetHost) {
         try {
-            ProcessBuilder pb = new ProcessBuilder("docker", "stop", containerId);
-            applyDockerHost(pb.environment(), targetHost);
-            Process process = pb.start();
-            boolean finished = process.waitFor(commandTimeoutSeconds, TimeUnit.SECONDS);
-            if (!finished || process.exitValue() != 0) {
+            if (!docker(targetHost, "stop", containerId).succeeded()) {
                 return false;
             }
             if (remove) {
-                ProcessBuilder rmPb = new ProcessBuilder("docker", "rm", containerId);
-                applyDockerHost(rmPb.environment(), targetHost);
-                rmPb.start().waitFor(commandTimeoutSeconds, TimeUnit.SECONDS);
+                docker(targetHost, "rm", containerId);
             }
             log.info("Container stopped: {} (remove={})", containerId, remove);
             return true;
-        } catch (IOException | InterruptedException e) {
+        } catch (IOException e) {
             log.warn("Failed to stop container {}: {}", containerId, e.getMessage());
             return false;
         }
@@ -333,16 +394,12 @@ public class MlflowDeploymentService {
     /**
      * Reads the MLmodel file directly from the running container.
      */
-    public String readMlmodelFromContainer(String containerId, String targetHost) throws IOException, InterruptedException {
-        ProcessBuilder pb = new ProcessBuilder("docker", "exec", containerId, "cat", "/opt/ml/model/MLmodel");
-        applyDockerHost(pb.environment(), targetHost);
-        Process process = pb.start();
-        String output = new String(process.getInputStream().readAllBytes());
-        boolean finished = process.waitFor(commandTimeoutSeconds, TimeUnit.SECONDS);
-        if (!finished || process.exitValue() != 0) {
-            throw new IOException("Failed to read MLmodel from container: " + new String(process.getErrorStream().readAllBytes()));
+    public String readMlmodelFromContainer(String containerId, String targetHost) throws IOException {
+        ProcessRunner.ProcessResult result = docker(targetHost, "exec", containerId, "cat", "/opt/ml/model/MLmodel");
+        if (!result.succeeded()) {
+            throw new IOException("Failed to read MLmodel from container: " + result.outputTail(ERROR_OUTPUT_CHARS));
         }
-        return output;
+        return result.stdout();
     }
 
     /**
@@ -360,23 +417,15 @@ public class MlflowDeploymentService {
      * Gets logs from a container on a specific Docker host.
      */
     public String getContainerLogs(String containerId, Integer tail, String targetHost) {
+        List<String> args = new ArrayList<>(List.of("logs"));
+        if (tail != null) {
+            args.add("--tail");
+            args.add(String.valueOf(tail));
+        }
+        args.add(containerId);
         try {
-            List<String> cmd = new ArrayList<>();
-            cmd.add("docker");
-            cmd.add("logs");
-            if (tail != null) {
-                cmd.add("--tail");
-                cmd.add(String.valueOf(tail));
-            }
-            cmd.add(containerId);
-
-            ProcessBuilder pb = new ProcessBuilder(cmd);
-            applyDockerHost(pb.environment(), targetHost);
-            pb.redirectErrorStream(true);
-            Process process = pb.start();
-            process.waitFor(commandTimeoutSeconds, TimeUnit.SECONDS);
-            return new String(process.getInputStream().readAllBytes());
-        } catch (IOException | InterruptedException e) {
+            return docker(targetHost, args.toArray(String[]::new)).combinedOutput();
+        } catch (IOException e) {
             log.warn("Failed to get logs for container {}: {}", containerId, e.getMessage());
             return "";
         }
@@ -385,7 +434,7 @@ public class MlflowDeploymentService {
     // ── Remove Image ────────────────────────────────────────────────────
 
     /**
-     * Removes a Docker image.
+     * Removes a Docker image. Not forced: Docker refuses while a container still uses it.
      *
      * @param imageName image name to remove
      * @param targetHost Docker host URI, or null/empty for local
@@ -393,16 +442,14 @@ public class MlflowDeploymentService {
      */
     public boolean removeImage(String imageName, String targetHost) {
         try {
-            ProcessBuilder pb = new ProcessBuilder("docker", "rmi", "-f", imageName);
-            applyDockerHost(pb.environment(), targetHost);
-            Process process = pb.start();
-            boolean finished = process.waitFor(commandTimeoutSeconds, TimeUnit.SECONDS);
-            if (finished && process.exitValue() == 0) {
+            ProcessRunner.ProcessResult result = docker(targetHost, "rmi", imageName);
+            if (result.succeeded()) {
                 log.info("Image removed: {}", imageName);
                 return true;
             }
+            log.info("Image {} not removed: {}", imageName, result.outputTail(300));
             return false;
-        } catch (IOException | InterruptedException e) {
+        } catch (IOException e) {
             log.warn("Failed to remove image {}: {}", imageName, e.getMessage());
             return false;
         }
@@ -416,6 +463,28 @@ public class MlflowDeploymentService {
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────
+
+    private ProcessRunner.ProcessResult docker(String targetHost, String... args) throws IOException {
+        List<String> cmd = new ArrayList<>(args.length + 1);
+        cmd.add("docker");
+        cmd.addAll(List.of(args));
+        return processRunner.run(cmd, dockerEnv(targetHost), commandTimeout());
+    }
+
+    private Duration commandTimeout() {
+        return Duration.ofSeconds(commandTimeoutSeconds);
+    }
+
+    private Map<String, String> dockerEnv(String targetHost) {
+        Map<String, String> env = new HashMap<>();
+        applyDockerHost(env, targetHost);
+        return env;
+    }
+
+    private static String lastLine(String text) {
+        String[] lines = text.strip().split("\\R");
+        return lines.length == 0 ? "" : lines[lines.length - 1].strip();
+    }
 
     private void applyDockerHost(Map<String, String> env, String targetHost) {
         if (targetHost != null && !targetHost.isEmpty()) {

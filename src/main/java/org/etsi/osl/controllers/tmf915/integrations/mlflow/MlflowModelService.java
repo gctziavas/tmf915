@@ -226,7 +226,7 @@ public class MlflowModelService {
 
         // Step 2 – deploy container
         MlflowDeploymentService.DeployResult deployResult =
-                deploymentService.deployContainer(imageName, containerName, port, targetHost);
+                deploymentService.deployContainer(imageName, containerName, port, targetHost, aiModel.getId());
 
         // Step 3 – update AiModel to ACTIVE
         updateModelAfterDeploy(aiModel, deployResult);
@@ -269,7 +269,7 @@ public class MlflowModelService {
 
         // Step 2 – deploy container
         MlflowDeploymentService.DeployResult deployResult =
-                deploymentService.deployContainer(imageName, containerName, port, targetHost);
+                deploymentService.deployContainer(imageName, containerName, port, targetHost, aiModel.getId());
 
         // Step 3 – update AiModel to ACTIVE
         updateModelAfterDeploy(aiModel, deployResult);
@@ -303,33 +303,80 @@ public class MlflowModelService {
     }
 
     /**
-     * Generates a container name using the AiModel's name and version if available,
-     * otherwise falls back to appending a partial ID to ensure uniqueness.
+     * Container name for an AiModel: {@code <name>-<first 8 characters of the id>}.
+     * The id makes it unique, so two models with the same name (names are not unique) never
+     * compete for one container name.
      */
-    private String generateContainerName(AiModel aiModel, String fallbackVersion) {
+    static String generateContainerName(AiModel aiModel, String ignoredVersion) {
+        String safeName = (aiModel.getName() != null && !aiModel.getName().trim().isEmpty())
+                ? sanitizeImageName(aiModel.getName().trim())
+                : "aimodel";
+        // Docker names must start with a letter or digit.
+        if (!Character.isLetterOrDigit(safeName.charAt(0))) {
+            safeName = "m" + safeName;
+        }
+        if (safeName.length() > 50) {
+            safeName = safeName.substring(0, 50);
+        }
+        String id = aiModel.getId();
+        return safeName + "-" + id.substring(0, Math.min(8, id.length()));
+    }
+
+    /**
+     * The container name the scheme before container labels produced for this model:
+     * {@code <name>-v<specVersion without "m-">}, or {@code <name>-<id8>} without a name or version.
+     * Only used to recognise unlabelled containers started before the upgrade. Reads the version
+     * from the stored specification reference, so it works on a detached model.
+     * Remove together with {@link MlflowDeploymentService.ContainerOwnership#LEGACY_NAME_MATCH}.
+     */
+    public static String legacyContainerName(AiModel aiModel) {
         String safeName = (aiModel.getName() != null && !aiModel.getName().trim().isEmpty())
                 ? sanitizeImageName(aiModel.getName())
                 : "aimodel";
-
-        String versionToUse = null;
-        if (aiModel.getAiModelSpecification() != null 
-                && aiModel.getAiModelSpecification().getVersion() != null 
-                && !aiModel.getAiModelSpecification().getVersion().trim().isEmpty()) {
-            versionToUse = aiModel.getAiModelSpecification().getVersion();
-        } else if (fallbackVersion != null && !fallbackVersion.trim().isEmpty()) {
-            versionToUse = fallbackVersion;
-        }
-
-        if (aiModel.getName() != null && !aiModel.getName().trim().isEmpty() && versionToUse != null) {
-            String cleanVersion = sanitizeImageName(versionToUse);
+        String version = aiModel.getServiceSpecification() != null ? aiModel.getServiceSpecification().getVersion() : null;
+        if (aiModel.getName() != null && !aiModel.getName().trim().isEmpty()
+                && version != null && !version.trim().isEmpty()) {
+            String cleanVersion = sanitizeImageName(version);
             if (cleanVersion.startsWith("m-")) {
                 cleanVersion = cleanVersion.substring(2);
             }
             return safeName + "-v" + cleanVersion;
         }
+        String id = aiModel.getId();
+        return safeName + "-" + id.substring(0, Math.min(8, id.length()));
+    }
 
-        // Fallback to our technique
-        return safeName + "-" + aiModel.getId().substring(0, Math.min(8, aiModel.getId().length()));
+    /**
+     * Whether another AiModel that is not terminated still needs this image: an {@code active}
+     * model running from it, or a {@code reserved} model of the same MLflow model (same image)
+     * waiting to deploy. Undeploy then keeps the image.
+     */
+    public boolean isImageNeededByAnotherModel(String imageName, AiModel model) {
+        String mlflowModelId = characteristicValue(model, "mlflowModelId");
+        for (ServiceStateType state : List.of(ServiceStateType.ACTIVE, ServiceStateType.RESERVED)) {
+            for (AiModel other : aiModelRepository.findByState(state)) {
+                if (other.getId() == null || other.getId().equals(model.getId())) {
+                    continue;
+                }
+                if (imageName.equals(characteristicValue(other, "imageName"))) {
+                    return true;
+                }
+                if (mlflowModelId != null && mlflowModelId.equals(characteristicValue(other, "mlflowModelId"))) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private static String characteristicValue(AiModel model, String name) {
+        if (model.getServiceCharacteristic() == null) return null;
+        for (Characteristic c : model.getServiceCharacteristic()) {
+            if (c != null && name.equals(c.getName())) {
+                return c.getValue() != null ? c.getValue().toString() : null;
+            }
+        }
+        return null;
     }
 
     /**
@@ -444,13 +491,53 @@ public class MlflowModelService {
     private void addCharacteristicToModel(AiModel model, String name, String value, String valueType) {
         addCharacteristicToModelObj(model, name, value, valueType);
     }
-    
+
+    /**
+     * Sets a characteristic, replacing any existing ones with the same name. Appending would
+     * leave the previous deployment's {@code containerId} first in the list after a redeploy,
+     * and undeploy would act on the old container.
+     */
     private void addCharacteristicToModelObj(AiModel model, String name, Object value, String valueType) {
+        if (model.getServiceCharacteristic() == null) {
+            model.setServiceCharacteristic(new java.util.ArrayList<>());
+        }
+        Characteristic existing = null;
+        java.util.Iterator<Characteristic> it = model.getServiceCharacteristic().iterator();
+        while (it.hasNext()) {
+            Characteristic c = it.next();
+            if (c != null && name.equals(c.getName())) {
+                if (existing == null) {
+                    existing = c;
+                } else {
+                    it.remove();
+                }
+            }
+        }
+        if (existing != null) {
+            // Update in place: keeps the managed entity, so the row is updated, not replaced.
+            existing.setValue(value);
+            existing.setValueType(valueType != null ? valueType : "string");
+            return;
+        }
         Characteristic characteristic = new Characteristic();
         characteristic.setName(name);
         characteristic.setValue(value);
         characteristic.setValueType(valueType != null ? valueType : "string");
         model.addServiceCharacteristicItem(characteristic);
+    }
+
+    /**
+     * Removes what a deployment recorded, so a stopped model does not advertise a dead endpoint
+     * or point undeploy at a removed container. {@code imageName} is kept: the image may outlive
+     * the container.
+     */
+    public static void clearDeploymentCharacteristics(AiModel model) {
+        if (model.getServiceCharacteristic() == null) {
+            return;
+        }
+        model.getServiceCharacteristic().removeIf(c -> c != null && c.getName() != null
+                && List.of("containerId", "hostPort", "endpoint", "deployedAt", "inferencePayloadExample")
+                        .contains(c.getName()));
     }
 
     private void addCharacteristic(AiModelCreate model, String name, String value, String valueType) {

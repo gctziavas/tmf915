@@ -31,9 +31,12 @@ To achieve horizontal model scales (spawning identical containers rapidly) witho
    * Driven exclusively by the MLflow Object Hash, formatted rigidly via `sanitizeImageName(modelId)` keeping its MLflow signature (e.g., `m-846ff5a9b35e...`).
    * TMF915 queries Docker explicitly to see if `m-846ff5a9b35e...` already lives on the host. If true, `mlflow models build-docker` is universally bypassed.
 2. **Docker Container Identity (`containerName`):**
-   * Evaluated uniquely per scale-out occurrence.
-   * `MlflowModelService.generateContainerName()` combines the developer's requested `AiModel.name` value with its associated semantic versioning limits or truncates a random 8-string ID slice if not sufficiently supplied.
-   * *Example Output Pattern:* `my-ai-model-name-v846ff5a9b35e..` vs pure Image `m-846ff...`
+   * One container per `AiModel`. `MlflowModelService.generateContainerName()` returns `<AiModel name>-<first 8 characters of the AiModel id>`, for example `my-ai-model-name-3f2c9a1b`, next to the image `m-846ff…`. AiModel names are not unique; the id part keeps container names unique.
+   * Every container carries two labels:
+     * `tmf915.aiModelId=<id>`: undeploy stops a container only when this label matches the model. Containers started before labels existed (named `<name>-v<version>`) are recognised by that old name.
+     * `tmf915.deployAttempt=<uuid>`: one value per `docker run`. A failed attempt removes only the container it created, never a container found by name.
+   * Host ports are scanned from `host-port-start` to `host-port-end`, but only a port conflict moves on to the next port. Any other `docker run` error fails the deployment at once.
+3. **Image removal:** undeploy removes the image only when no other `active` model uses it and no `reserved` model of the same MLflow model is waiting for it, and never with `-f`.
 
 ### 4. Lifecycle Finalization & Reversion Strategy
 
