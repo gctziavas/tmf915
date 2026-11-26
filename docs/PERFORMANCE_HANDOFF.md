@@ -42,9 +42,10 @@ Not verified: the running application was never called. That the HTTP layer uses
 
 ## Status
 
-- **Part 1: done** (2026-11-26, uncommitted). See "Part 1 outcome" at the end of Part 1.
-- **Part 2: done** (2026-11-26, uncommitted). Item 5 was only partly done (not profiled). See "Part 2 outcome" at the end of Part 2.
-- **Part 3: done** (2026-11-26, uncommitted). See "Part 3 outcome" at the end of Part 3.
+- **Part 1: done** and committed. See "Part 1 outcome" at the end of Part 1.
+- **Part 2: done** and committed. Item 5 was only partly done (not profiled). See "Part 2 outcome" at the end of Part 2.
+- **Part 3: done** and committed (up to `77f162a`). See "Part 3 outcome" at the end of Part 3.
+- **Part 4: not started.** Correctness and configuration issues found while rewriting the documentation (2026-11-26). Nothing is fixed yet; items 4.3 and 4.8 need the owner's decision.
 
 ## Part 1: fix the AiModel list (requested)
 
@@ -212,6 +213,141 @@ Further notes:
 - The IDE compiling into `target/` corrupted class files once more ("cannot access …", "X cannot be converted to X"). Running `mvn clean test` again fixed it.
 - `mvn test`: 224 tests, all passing.
 - The VS Code Java extension compiles into `target/` and repeatedly left broken or stale classes there ("Unresolved compilation problems" comes from its Eclipse compiler). Run `mvn clean test`, or turn off the extension's auto-build while running Maven.
+
+## Part 4: findings from the documentation review
+
+These were found while rewriting `README.md` and the guides in `docs/` (2026-11-26) and checking every statement against the code and a running instance. They are mostly correctness and configuration problems, not performance. **None is fixed.** The guides describe the current behaviour, so each item lists the documentation to update once it is fixed.
+
+Ordered by impact. Items 4.3 and 4.8 change who can access what: do not implement them without the owner's decision.
+
+### 4.1 Webhooks never report deployment outcomes (high)
+
+**Problem.** `AiModelDomainEvent`s are only published by `AiModelLifecycleService`, in response to API calls. State changes made in the background by `DeploymentScheduler` publish nothing:
+
+- deployment completed: `reserved` → `active` (`MlflowModelService.updateModelAfterDeploy`);
+- deployment failed: → `designed`, with a note (`DeploymentScheduler.executeDeployment`, catch block);
+- automatic teardown at `endDate`: → `terminated` (`DeploymentScheduler.executeUndeploy`).
+
+So a subscriber never learns that its model became `active`, which is the main reason to subscribe. The old integration guide's example (waiting for `active` in a webhook) could never fire.
+
+**Fix.**
+
+1. Inject `ApplicationEventPublisher` into `DeploymentScheduler`.
+2. Publish `AiModelDomainEvent(model, STATE_CHANGE)` with the reloaded model after `executeDeployment` (state `active` or `designed`) and after `executeUndeploy` (state `terminated`).
+3. Publish **after** the `TransactionTemplate` has committed, outside the lambda, so listeners never see uncommitted state.
+4. Publishing is cheap when webhooks are disabled (no listener).
+
+**Verify.** A unit test in the style of `DeploymentSchedulerTest` with a mocked publisher: one event per outcome, with the right state.
+
+**Docs to update.** `docs/INTEGRATION_GUIDE.md`:
+
+- section 4.3: polling no longer required;
+- section 5, "Which changes produce an event": add the three background rows and remove the "send no event" paragraph;
+- section 8, Limitations.
+
+### 4.2 Docker Compose rejects every token on a new machine (high)
+
+**Problem.** `docker-compose.yml` hard-codes `KEYCLOAK_ISSUER_URI` and `SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI` to `http://172.16.100.94:8080/auth/realms/openslice`. `SecurityConfiguration.jwtDecoder()` accepts a token only if its `iss` equals that string exactly, and Keycloak sets `iss` from the URL it was called on. On any other machine every API call returns `401` until someone edits the file.
+
+The `MLFLOW_*` defaults point at the same lab host, but those are already overridable with `${…:-…}`.
+
+**Fix.**
+
+- Make both issuer lines `${KEYCLOAK_ISSUER_URI:-http://localhost:8080/auth/realms/openslice}`.
+- Consider the same `localhost` default for the MLflow and MinIO URLs, so the `full` profile works without exports.
+
+**Verify.** On a fresh machine: `docker compose --profile full up -d --build`, get a token from `localhost:8080`, call `GET /tmf-api/AiM/v4/aiModel` and expect `200`.
+
+**Docs to update.** `docs/USER_GUIDE.md` section 1.1 (becomes "set `KEYCLOAK_ISSUER_URI` if clients use another address") and the note under "Quick start" in `README.md`.
+
+### 4.3 MCP endpoints are unauthenticated (owner decision)
+
+**Problem.** `SecurityConfiguration` permits `/mcp/**` and `/sse/**` without a token, so anyone who can reach the API can list the catalog and the deployed models' names, states and ids through the MCP tools. This was confirmed on a running instance. The tools are read-only.
+
+**Options.**
+
+- **(a)** Require a bearer token: remove the two paths from `permitAll`, and update `scripts/mcp_*.py` to send `Authorization`.
+- **(b)** Keep it open and restrict it at the network level.
+- **(c)** Keep it open, and document it as intentional.
+
+The guides currently describe (c) as a warning.
+
+**Docs to update.** `docs/INTEGRATION_GUIDE.md` sections 1 and 6, and the `README.md` "What it does" list.
+
+### 4.4 Spec PATCH/DELETE of an unknown id returns 500 (medium)
+
+**Problem.** `AiModelSpecificationRepositoryService` throws `IllegalArgumentException("No AiModelSpecification with ID …")`, and `AiModelSpecificationApiController` has no `@ExceptionHandler`, so the client gets `500`. `AiModelApiController` maps the same exception to `400`, which is also wrong for "not found".
+
+**Fix.** Return `404` for unknown ids in both controllers, and keep `400` for invalid input (for example a forbidden state).
+
+- Use a dedicated exception, or check existence first.
+- Do **not** use a `@ControllerAdvice`: springdoc 2.6.0 breaks with one (see "Further notes" in the Part 3 outcome). Use a per-controller `@ExceptionHandler`, as `AiModelApiController` already does.
+- Changing `aiModel` from `400` to `404` is visible to clients; mention it in the release notes.
+
+**Verify.** MockMvc tests in `AiModelListHttpTest`: PATCH and DELETE of an unknown id on both resources return `404`.
+
+**Docs to update.** `docs/INTEGRATION_GUIDE.md` section 3, "Errors" row.
+
+### 4.5 Synced specifications have no `lifecycleStatus` (low)
+
+**Problem.** `MlflowSpecificationService` injects `aimodel.specification.default-lifecycle-status` (default `Active`) into `defaultLifecycleStatus` but never uses it. Specifications created by the MLflow sync have no `lifecycleStatus`. The MCP tool `listAvailableAiModelSpecifications` returns `null` for it, and the Postman request "2. List Existing AI Model Specifications" asks for it with `fields`.
+
+**Fix.**
+
+- Call `spec.setLifecycleStatus(defaultLifecycleStatus)` in `createSpecificationFromLoggedModel` and in the classic-registry builder.
+- Existing rows stay empty unless backfilled with `UPDATE aim915_aimspec SET lifecycle_status = 'Active' WHERE lifecycle_status IS NULL`. Check the column name first.
+
+**Verify.** Extend `MlflowSpecificationService` tests.
+
+**Docs to update.**
+
+- `docs/MODEL_PUBLISHING_GUIDE.md` section 3: add a `lifecycleStatus` row;
+- `docs/USER_GUIDE.md` section 8: add the setting;
+- `docs/USER_GUIDE.md` section 3: `fields` example may include `lifecycleStatus` again.
+
+### 4.6 `aimodel.deployment.serving-base-url` is not used (low)
+
+**Problem.** It is defined in `application.yml` and set from `docker-compose.yml` (`AIMODEL_DEPLOYMENT_SERVING_BASE_URL`), but no code reads it. Meanwhile the `endpoint` characteristic uses the Docker host's address, which is `localhost` for a Unix socket (`MlflowDeploymentService.resolveEndpointHost`). That endpoint is only reachable on the Docker machine, which is the case in the default Compose setup.
+
+**Options.**
+
+- **(a)** Implement it: when set, build `endpoint` as `<serving-base-url>:<hostPort>/invocations`.
+- **(b)** Delete it from both files.
+
+(a) fixes a real usability problem.
+
+**Docs to update.** `docs/USER_GUIDE.md` section 5 and the troubleshooting row "`endpoint` not reachable", and `docs/MODEL_PUBLISHING_GUIDE.md` section 5.
+
+### 4.7 `full` profile needs a manual MinIO bucket (low)
+
+**Problem.** The `mlflow` service stores artifacts in `s3://mlflow/`, but nothing creates the `mlflow` bucket in MinIO. Artifact uploads fail until someone creates it in the console.
+
+The user guide states this, based on MLflow and MinIO behaviour; it was not reproduced here.
+
+**Fix.** Add a one-shot `minio-init` service to the `full` profile (image `minio/mc`) that waits for MinIO and runs `mc mb --ignore-existing local/mlflow`. Make `mlflow` depend on it.
+
+**Docs to update.** `docs/USER_GUIDE.md` section 1.2: remove the manual step.
+
+### 4.8 Model endpoints are unauthenticated (owner decision)
+
+**Problem.** The `endpoint` of an active model is the MLflow scoring server on a published host port (3000–7000), reachable without credentials. This is the platform's design rather than a bug, and both guides document it.
+
+**Options.**
+
+- Bind containers to an internal network and put an authenticating gateway in front.
+- Add an inference proxy to this API (for example `POST /aiModel/{id}/invocations`) that checks the token and forwards the request.
+
+### 4.9 Documentation-only corrections (done)
+
+Already reflected in the rewritten guides; listed so nobody restores them:
+
+- Swagger UI is at `/tmf-api/swagger-ui.html`, not `/swagger-ui.html`.
+- The specification description comes from `log_model(params=...)`, not tags.
+- `mlflow.sync.experiment-ids` does not exist.
+- `mvn package` is not needed before `docker compose`: the Dockerfile builds the application.
+- Default model names are `<specName>-v-<specVersion>-<n>`.
+- The only implemented resources are `aiModel`, `aiModelSpecification` and `/hub`; everything else returns `501`, including `/topic/{id}/hub`.
+- The old guides were renamed: `INTEGRATION_HANDOVER_GUIDE.md` → `INTEGRATION_GUIDE.md`, `MLFLOW_DEVELOPER_GUIDE.md` → `MODEL_PUBLISHING_GUIDE.md`, `FULL_PLATFORM_DEPLOYMENT_GUIDE.md` → `USER_GUIDE.md`.
 
 ## Related bugs, not performance
 

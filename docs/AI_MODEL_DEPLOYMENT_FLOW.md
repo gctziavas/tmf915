@@ -4,7 +4,7 @@ This document describes the end-to-end lifecycle of an AI model deployment in th
 
 ## Architecture & Communication Flow
 
-![Architecture & Communication Flow](./deployment_flow.png)
+![Architecture & Communication Flow](images/deployment_flow.png)
 
 ## Internal Domain Mechanics
 
