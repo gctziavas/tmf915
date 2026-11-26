@@ -6,6 +6,12 @@ server:
   port: 13082
   servlet:
     context-path: /tmf-api
+  # gzip responses for clients that send Accept-Encoding: gzip (browsers, Postman, curl and
+  # HTTP libraries do by default). The JSON clients receive is unchanged.
+  compression:
+    enabled: true
+    mime-types: application/json,application/problem+json,text/plain,text/html,text/css,application/javascript
+    min-response-size: 1KB
   ssl:
     enabled: false
 
@@ -60,6 +66,9 @@ spring:
       idleTimeout: 20000
       connectionTimeout: 40000
   jpa:
+    # Off: requests do not hold a DB connection while the response is written. Repository
+    # services load everything the response needs inside their own transactions.
+    open-in-view: false
     hibernate:
       ddl-auto: update
     show-sql: false
@@ -78,6 +87,8 @@ spring:
           jwk-set-uri: http://keycloak:8080/auth/realms/openslice/protocol/openid-connect/certs
   jackson:
     date-format: org.etsi.osl.controllers.tmf915.RFC3339DateFormat
+    # Leave out "field": null entries from REST responses.
+    default-property-inclusion: non_null
 logging:
   level:
     root: INFO

@@ -22,7 +22,10 @@ import java.util.Objects;
  */
 
 @Entity
-@Table(name = "aim915_aim")
+@Table(name = "aim915_aim", indexes = {
+    @Index(name = "idx_aim915_aim_state", columnList = "state"),
+    @Index(name = "idx_aim915_aim_name", columnList = "name")
+})
 @Schema(name = "AiModel", description = "AiModel is a base class for defining the AiModel hierarchy")
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-03-18T18:56:23.275173970Z[Etc/UTC]", comments = "Generator version: 7.21.0-SNAPSHOT")
 public class AiModel {

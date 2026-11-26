@@ -21,7 +21,9 @@ import java.util.Objects;
  */
 
 @Entity
-@Table(name = "aim915_aimspec")
+@Table(name = "aim915_aimspec", indexes = {
+    @Index(name = "idx_aim915_aimspec_name_version", columnList = "name, version")
+})
 @Schema(name = "AiModelSpecification", description = "AiModelSpecification is a class that offers characteristics to describe a type of service. Functionally, it acts as a template by which Services may be instantiated. By sharing the same  specification, these services would therefore share the same set of characteristics.")
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-03-18T18:56:23.275173970Z[Etc/UTC]", comments = "Generator version: 7.21.0-SNAPSHOT")
 public class AiModelSpecification {

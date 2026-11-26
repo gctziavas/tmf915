@@ -13,13 +13,20 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.net.URI;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
+/**
+ * Write methods run in a transaction by default; finders are read-only. Lazy associations that
+ * are serialized after the method returns are loaded in {@code normalize}, because
+ * {@code spring.jpa.open-in-view} is off.
+ */
 @Service
+@Transactional
 public class AiModelRepositoryService {
 
     private static final Logger log = LoggerFactory.getLogger(AiModelRepositoryService.class);
@@ -39,6 +46,7 @@ public class AiModelRepositoryService {
         this.aiModelSpecificationRepositoryService = aiModelSpecificationRepositoryService;
     }
 
+    @Transactional(readOnly = true)
     public List<AiModel> findAllAiModels() {
         log.info("AiModels LIST");
         List<AiModel> result = new ArrayList<>();
@@ -52,6 +60,7 @@ public class AiModelRepositoryService {
      * @param offset zero-based row offset (null = 0)
      * @param limit  page size (null = {@link OffsetPageable#DEFAULT_LIMIT})
      */
+    @Transactional(readOnly = true)
     public List<AiModel> findAiModels(Integer offset, Integer limit) {
         OffsetPageable page = OffsetPageable.of(offset, limit, Sort.by("id"));
         log.info("AiModels LIST (offset={}, limit={})", page.getOffset(), page.getPageSize());
@@ -60,6 +69,7 @@ public class AiModelRepositoryService {
                 .toList();
     }
 
+    @Transactional(readOnly = true)
     public AiModel findAiModelById(String id) {
         log.info("AiModel FIND BY ID: {}", id);
         return aiModelRepository.findById(id)
@@ -68,7 +78,7 @@ public class AiModelRepositoryService {
     }
 
     public AiModel createAiModel(AiModelCreate aiModelCreate) {
-        log.info("AiModel CREATE: {}", aiModelCreate);
+        log.info("AiModel CREATE: name={}", aiModelCreate.getName());
         
         if (aiModelCreate.getServiceSpecification() != null && aiModelCreate.getServiceSpecification().getId() != null) {
             String specId = aiModelCreate.getServiceSpecification().getId();
@@ -100,8 +110,9 @@ public class AiModelRepositoryService {
         aiModelRepository.delete(aiModel);
     }
 
-    public List<AiModel> findByNamePrefix(String prefix) {
-        return aiModelRepository.findByNameStartingWith(prefix);
+    @Transactional(readOnly = true)
+    public long countByNamePrefix(String prefix) {
+        return aiModelRepository.countByNameStartingWith(prefix);
     }
 
     public AiModel updateAiModelState(String id, ServiceStateType state) {
@@ -113,12 +124,14 @@ public class AiModelRepositoryService {
         return normalize(aiModelRepository.save(aiModel));
     }
 
+    @Transactional(readOnly = true)
     public List<AiModel> findByNameStartingWith(String namePrefix) {
         return aiModelRepository.findByNameStartingWith(namePrefix).stream()
                 .map(this::normalize)
                 .toList();
     }
 
+    @Transactional(readOnly = true)
     public List<AiModel> findByState(ServiceStateType state) {
         log.info("AiModel FIND BY STATE: {}", state);
         return aiModelRepository.findByState(state).stream()
@@ -141,13 +154,32 @@ public class AiModelRepositoryService {
             model.setHref(URI.create(AI_MANAGEMENT_BASE_PATH + "/aiModel/" + model.getId()));
         }
 
+        // Open-in-view is off: anything serialized after the transaction ends must be loaded now.
+        // With @BatchSize, the first initialisation loads the characteristics of up to 50
+        // models in the same session in one query.
+        Hibernate.initialize(model.getServiceCharacteristic());
+
         AiModelSpecification specification = model.getAiModelSpecification();
+        if (specification != null && !Hibernate.isInitialized(specification)
+                && !hasStoredReference(model, specification)) {
+            // Legacy row without a stored reference: load the specification once so the
+            // reference can be built (and stored on the next write).
+            Hibernate.initialize(specification);
+        }
         if (specification != null && Hibernate.isInitialized(specification)) {
             normalizeSpecification(specification);
             model.setServiceSpecification(toServiceSpecificationRef(specification, model.getServiceSpecification()));
         }
 
         return model;
+    }
+
+    /** True when the stored reference matches the (possibly unloaded) specification. */
+    private static boolean hasStoredReference(AiModel model, AiModelSpecification specification) {
+        ServiceSpecificationRef stored = model.getServiceSpecification();
+        // getId() on a Hibernate proxy returns the id without loading the entity.
+        return stored != null && stored.getName() != null
+                && specification.getId() != null && specification.getId().equals(stored.getId());
     }
 
     private void normalizeSpecification(AiModelSpecification specification) {

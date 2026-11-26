@@ -13,6 +13,8 @@ import java.util.List;
 public interface AiModelRepository extends CrudRepository<AiModel, String>, PagingAndSortingRepository<AiModel, String> {
     List<AiModel> findByNameStartingWith(String namePrefix);
 
+    long countByNameStartingWith(String namePrefix);
+
     /** One page of models. Returns a List (not a Page) so no count query is issued. */
     List<AiModel> findAllBy(Pageable pageable);
 

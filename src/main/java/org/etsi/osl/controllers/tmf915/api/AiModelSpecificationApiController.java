@@ -41,6 +41,7 @@ public class AiModelSpecificationApiController implements AiModelSpecificationAp
     public ResponseEntity<List<AiModelSpecification>> listAiModelSpecification(@Nullable String fields,
                                                                                 @Nullable Integer offset,
                                                                                 @Nullable Integer limit) {
+        // ?fields=… is applied to the response by FieldsResponseBodyAdvice.
         return ResponseEntity.ok(service.findAllAiModelSpecifications(offset, limit));
     }
 

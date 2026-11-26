@@ -51,6 +51,7 @@ public class AiModelApiController implements AiModelApi {
     public ResponseEntity<List<AiModel>> listAiModel(@Nullable String fields,
                                                       @Nullable Integer offset,
                                                       @Nullable Integer limit) {
+        // ?fields=… is applied to the response by FieldsResponseBodyAdvice.
         return ResponseEntity.ok(repoService.findAiModels(offset, limit));
     }
 

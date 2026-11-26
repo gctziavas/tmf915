@@ -9,12 +9,19 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.net.URI;
 import java.util.List;
 import java.util.UUID;
 
+/**
+ * Write methods run in a transaction by default; finders are read-only. Lazy associations that
+ * are serialized after the method returns are loaded in {@code normalize}, because
+ * {@code spring.jpa.open-in-view} is off.
+ */
 @Service
+@Transactional
 public class AiModelSpecificationRepositoryService {
 
     private static final Logger log = LoggerFactory.getLogger(AiModelSpecificationRepositoryService.class);
@@ -28,6 +35,7 @@ public class AiModelSpecificationRepositoryService {
         this.aiModelSpecificationRepository = aiModelSpecificationRepository;
     }
 
+    @Transactional(readOnly = true)
     public List<AiModelSpecification> findAllAiModelSpecifications(Integer offset, Integer limit) {
         log.info("AiModelSpecifications LIST (offset={}, limit={})", offset, limit);
         OffsetPageable page = OffsetPageable.of(offset, limit, Sort.by("id"));
@@ -36,6 +44,7 @@ public class AiModelSpecificationRepositoryService {
                 .toList();
     }
 
+    @Transactional(readOnly = true)
     public AiModelSpecification findAiModelSpecificationById(String id) {
         log.info("AiModelSpecification FIND BY ID: {}", id);
         return aiModelSpecificationRepository.findById(id)
@@ -43,6 +52,7 @@ public class AiModelSpecificationRepositoryService {
                 .orElse(null);
     }
 
+    @Transactional(readOnly = true)
     public AiModelSpecification findAiModelSpecificationByNameAndVersion(String name, String version) {
         log.info("AiModelSpecification FIND BY name/version: {}/{}", name, version);
         return aiModelSpecificationRepository.findByNameAndVersion(name, version)
@@ -50,6 +60,7 @@ public class AiModelSpecificationRepositoryService {
                 .orElse(null);
     }
 
+    @Transactional(readOnly = true)
     public AiModelSpecification findAiModelSpecificationByName(String name) {
         log.info("AiModelSpecification FIND BY name: {}", name);
         return aiModelSpecificationRepository.findByName(name)
@@ -58,7 +69,7 @@ public class AiModelSpecificationRepositoryService {
     }
 
     public AiModelSpecification createAiModelSpecification(AiModelSpecificationCreate aiModelSpecCreate) {
-        log.info("AiModelSpecification CREATE: {}", aiModelSpecCreate);
+        log.info("AiModelSpecification CREATE: name={}, version={}", aiModelSpecCreate.getName(), aiModelSpecCreate.getVersion());
         AiModelSpecification spec = AiModelSpecificationMapper.fromCreate(aiModelSpecCreate);
         spec.setId(UUID.randomUUID().toString());
         normalize(spec);
@@ -85,6 +96,10 @@ public class AiModelSpecificationRepositoryService {
         if (specification == null) {
             return null;
         }
+
+        // Open-in-view is off: load what is serialized after the transaction ends. With
+        // @BatchSize this loads the characteristics of up to 50 specifications in one query.
+        org.hibernate.Hibernate.initialize(specification.getSpecCharacteristic());
 
         if (specification.getAtType() == null) {
             specification.setAtType(AI_MODEL_SPECIFICATION_TYPE);

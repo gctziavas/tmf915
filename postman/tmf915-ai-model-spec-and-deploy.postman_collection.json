@@ -199,7 +199,7 @@
           }
         ],
         "url": {
-          "raw": "{{baseUrl}}/aiModelSpecification?limit={{listLimit}}",
+          "raw": "{{baseUrl}}/aiModelSpecification?limit={{listLimit}}&fields=name,version,lifecycleStatus",
           "host": [
             "{{baseUrl}}"
           ],
@@ -210,6 +210,10 @@
             {
               "key": "limit",
               "value": "{{listLimit}}"
+            },
+            {
+              "key": "fields",
+              "value": "name,version,lifecycleStatus"
             }
           ]
         },

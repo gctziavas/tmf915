@@ -40,6 +40,12 @@ The existing test `testAiModelSpecificationSerializesAsReference` in `src/test/j
 
 Not verified: the running application was never called. That the HTTP layer uses Jackson 3 is inferred from Spring Boot 4 defaults and the jar contents. Task 1.2 confirms it.
 
+## Status
+
+- **Part 1: done** (2026-11-26, uncommitted). See "Part 1 outcome" at the end of Part 1.
+- **Part 2: done** (2026-11-26, uncommitted). Item 5 was only partly done (not profiled). See "Part 2 outcome" at the end of Part 2.
+- **Part 3: not started.**
+
 ## Part 1: fix the AiModel list (requested)
 
 ### 1.1 Port the reference serializer to Jackson 3
@@ -100,6 +106,36 @@ Implementing `fields` is optional for Part 1. If skipped, say so in the report.
 - Listing models does not query the specification table per model.
 - Report any existing test that had to change and why.
 
+### Part 1 outcome
+
+**Diagnosis confirmed.** The new HTTP test failed before the fix: `GET /aiModel` embedded each full specification, including `specCharacteristic`, `modelDataSheet` and Hibernate's internal `hibernateLazyInitializer` property.
+
+What was done:
+
+| Task | Change | Verified by |
+|---|---|---|
+| 1.1 | The old serializer was deleted instead of ported. `AiModel.getAiModelSpecification()` is now `@JsonIgnore`, and a new getter `getAiModelSpecificationRef()` writes the JSON property `aiModelSpecification` (read-only) as a `model/AiModelSpecificationRef` record. Only `jackson-annotations` are used, so Jackson 3 (REST) and Jackson 2 (webhooks) produce the same reference. | `AiModelListHttpTest`, `AiModelUnitTest` (checks both Jackson versions) |
+| 1.3 | `AiModelSpecificationRef.of(...)` builds the reference from the stored `serviceSpecification` columns when the specification is an uninitialised proxy with a matching id and a stored name. Otherwise it reads the entity, which loads it; that only happens for legacy rows without a stored name. `normalize` now rebuilds the stored reference when it points at a different specification id (model re-pointed via PATCH). | 0 `AiModelSpecification` loads while listing models |
+| 1.4 | New `reposervices/OffsetPageable` (row-offset `Pageable`, default limit 50). `AiModelRepository.findAllBy(Pageable)` returns a `List`, so no count query runs. New `AiModelRepositoryService.findAiModels(offset, limit)`, ordered by `id`; the controller uses it. `findAllAiModels()` stays unpaged for the MCP tools and lifecycle code. The specification list was switched to `OffsetPageable` as well, which fixes its offset bug. `fields` is still ignored. | Paging assertions in `AiModelListHttpTest` |
+| 1.5 | `@org.hibernate.annotations.BatchSize(size = 50)` on `AiModel.serviceCharacteristic` and `AiModelSpecification.specCharacteristic`. | Exactly 2 SQL statements to list models, and 2 to list specifications |
+
+Behaviour changes visible to clients:
+
+- `GET /aiModel` without `limit` returns at most 50 models; before, it returned all of them.
+- Both lists are now ordered by `id`; before, there was no `ORDER BY`.
+- The specification list honours offsets that are not a multiple of the limit.
+- In the fast path, the reference's `@type` and `@baseType` are the defaults (`AIModelSpecification`, `ServiceSpecification`), not whatever the specification row stores.
+- The specification endpoints still return full specifications, as checked by tests.
+
+Tests: `src/test/java/.../api/AiModelListHttpTest.java` is new. It is the only test that boots the Spring context: H2, MockMvc built from the real `WebApplicationContext` without the security filter chain, and `ROLE_USER` put into the `SecurityContextHolder`. Mocks were updated in `AiModelApiControllerTest` and `AiModelSpecificationRepositoryServiceUnitTest`. `mvn test`: 189 tests, all passing at the end of Part 1.
+
+Findings while doing Part 1, not fixed:
+
+- With `mlflow.enabled=false` the application fails to start: `MlflowSpecificationService` is not conditional but depends on `MlflowClientService`, which is. The HTTP test therefore runs with `mlflow.enabled=true`, `mlflow.sync.enabled=false` and an unreachable tracking URI.
+- `src/test/resources/application.yml` used to replace the main `application.yml`, so main-only properties were missing in tests. This was fixed after Part 2: see "Test configuration" below.
+- The VS Code Java extension can compile into `target/` while Maven runs, giving "Extra bytes at the end of class file". `mvn clean` fixes it.
+- JaCoCo 0.8.11 prints instrumentation errors on JDK 25. They are noise; the tests pass.
+
 ## Part 2: database and persistence
 
 Ordered by expected benefit. Each is independent.
@@ -111,6 +147,35 @@ Ordered by expected benefit. Each is independent.
 5. **Converter cost on read.** About 25 columns across `AiModel` and `AiModelSpecification` use JSON `AttributeConverter`s (`mappers/converters`). Each is parsed on load, and Hibernate is believed to copy mutable converted values through the converter again for dirty checking. This second cost is an assumption; measure with a profiler before optimizing. Read-only transactions and projections on list paths are the cheap mitigation.
 6. **Load-to-count.** `AiModelLifecycleService.deriveUniqueName` loads every model whose name starts with a prefix only to call `size()`. Replace with a `countByNameStartingWith` repository method.
 7. **Payload logging.** `log.info("AiModel CREATE: {}", aiModelCreate)` and the equivalent in the specification service stringify whole objects at INFO on every create. Log ids and names, or move to DEBUG.
+
+### Part 2 outcome
+
+| Item | Status | Change | Verified by |
+|---|---|---|---|
+| 2.1 `fields` | Done: opt-in, as the owner chose; extended to `/aiModel` | New `api/FieldsResponseBodyAdvice` handles every GET in the `api` package (`/aiModel`, `/aiModel/{id}`, `/aiModelSpecification`, `/aiModelSpecification/{id}`). With `?fields=a,b` it converts the response body to a JSON tree using the application's own Jackson 3 mapper and removes the other top-level keys, always keeping `id`, `href` and `@type`. Computed properties such as the AiModel `aiModelSpecification` reference survive, and entities are never touched. Without `fields`, and on writes, the body passes through unchanged. This trims the response only: the full rows are still read. It is registered by `api/FieldsResponseBodyAdviceConfiguration` (a `BeanPostProcessor` on `RequestMappingHandlerAdapter`) rather than `@ControllerAdvice`; see the springdoc note below. An earlier version (`mappers/FieldSelection`, a round trip through the entity class) was removed because it lost the read-only `aiModelSpecification` reference. The Postman request "2. List Existing AI Model Specifications" sends `fields=name,version,lifecycleStatus`; the collection variable it fills is never read. | 6 tests in `AiModelListHttpTest`: list and get-by-id for both resources, stored data left unmodified, ignored on PATCH |
+| 2.2 Nulls and compression | Done: both, as the owner chose | `spring.jackson.default-property-inclusion: non_null` (REST responses through the Jackson 3 mapper; the Jackson 2 webhook `ObjectMapper` still writes nulls). `server.compression` is enabled for JSON and text types above 1 KB. | `responsesLeaveOutNullFields`; new `ResponseCompressionTest` on a real port: `/v3/api-docs` went from 271,809 bytes of JSON to 18,677 bytes on the wire (that document is pretty-printed, so API lists will compress somewhat less) |
+| 2.3 Indexes | Done | `@Table(indexes = ...)`: `idx_aim915_aim_state`, `idx_aim915_aim_name`, `idx_aim915_aimspec_name_version`. | `indexesExist` (H2). On MySQL, `ddl-auto: update` is expected to create them on the next start; confirm with `SHOW INDEX FROM aim915_aim`. |
+| 2.4 Open session in view | Done | `spring.jpa.open-in-view: false` in `application.yml`. Both repository services are `@Transactional`, with finders `readOnly = true`. `normalize` in both services loads the lazy collections (`serviceCharacteristic`, `specCharacteristic`) before the transaction ends. It also loads the specification for legacy model rows that have no stored reference. | 7 new tests in `AiModelListHttpTest`: get-by-id, PATCH merges for model and specification, legacy row, a read-only find followed by an update in one outer transaction (the scheduler's pattern), the open-in-view bean being absent, and indexes. Removing the collection load from `normalize` makes 6 of these tests fail. |
+| 2.5 Converter cost | Partly | Not profiled. Read-only finders now run in Hibernate read-only sessions, which skip the dirty-checking snapshot for the loaded entities. No projections were added. | — |
+| 2.6 Load-to-count | Done | `AiModelRepository.countByNameStartingWith` and `AiModelRepositoryService.countByNamePrefix` replace `findByNamePrefix`, which was removed. `deriveUniqueName` uses the count. | Existing lifecycle tests |
+| 2.7 Payload logging | Done | Create logs now print the name (and version for specifications), not the whole object. They were not moved to DEBUG, because `application.yml` logs `org.etsi.osl.controllers.tmf915` at DEBUG. | — |
+
+Notes for whoever continues:
+
+- A `getId()` on a detached Hibernate proxy returns the id without loading it. This was checked with a throwaway test. `AiModelLifecycleService.enrichCharacteristicsFromSpecification` relies on it.
+- Deployment code (`DeploymentScheduler.executeDeployment`, `executeUndeploy`, `AiModelLifecycleService.handleUndeploy`) runs inside its own `TransactionTemplate`, so it never depended on open-in-view. That template wraps the whole Docker build and deploy, which takes up to 10 minutes. For that whole time it holds one database transaction and one pooled connection. This is a performance problem in its own right: a few deployments at once can drain the Hikari pool (max 20). The fix is to load the model in a short transaction, deploy outside any transaction, then write the result in a second short transaction. It was not done, because it changes deployment failure handling and needs Docker and MLflow to test.
+- **springdoc 2.6.0 does not support Spring Framework 7 fully.** Its `GenericResponseService` calls `new ControllerAdviceBean(Object)`, which Spring 7 removed. As soon as any `@ControllerAdvice` bean exists, `/v3/api-docs` and Swagger UI fail with `NoSuchMethodError`. Today there are none, which is why `FieldsResponseBodyAdvice` is registered without the annotation. Upgrading springdoc to a Spring Boot 4 compatible release (the 3.x line) removes the constraint; `FieldsResponseBodyAdviceConfiguration` can then be replaced by `@ControllerAdvice`. `ResponseCompressionTest` fails if `/v3/api-docs` breaks.
+- `mvn test`: 205 tests, all passing.
+
+### Test configuration
+
+`src/test/resources/application.yml` was replaced by `src/test/resources/application.properties`. A YAML file with the same name in test resources shadows the main `application.yml` on the classpath, so the tests ran without production settings and had to repeat them. A `.properties` file is loaded alongside the main YAML and takes precedence on conflicts. Tests therefore run with the real `application.yml`, overridden only for H2, `ddl-auto: create-drop`, the H2 dialect, and no MLflow (sync off, unreachable tracking URI). Profile files such as `application-integration.yml` still apply on top.
+
+Consequences:
+
+- `AiModelListHttpTest` and `ResponseCompressionTest` no longer repeat settings from `application.yml`. `open-in-view`, null exclusion and compression are now checked against the real file.
+- MockMvc requests carry the real context path (`/tmf-api`), because `server.servlet.context-path` and `openapi.aiManagement.base-path: /AiM/v4` now apply.
+- Integration tests (`@ActiveProfiles("integration")`) now also get the main `application.yml`. Before, they lacked `springdoc.oAuthFlow.*` and `jwt.jwk-set-uri`, which are required at startup, so they most likely could not start. A throwaway test confirmed that the integration-profile context now starts with the expected values (H2, `create-drop`, integration port range, main springdoc settings). The integration tests themselves were not run, because they need the remote MLflow and Docker hosts.
 
 ## Part 3: MCP tools, MLflow sync, webhooks
 

@@ -456,9 +456,9 @@ public class AiModelLifecycleService {
         String base = specVersion != null && !specVersion.isBlank()
                 ? specName + "-v-" + specVersion
                 : specName;
-        List<AiModel> existing = repoService.findByNamePrefix(base + "-");
+        long existing = repoService.countByNamePrefix(base + "-");
         // also check exact base name to account for any legacy entries
-        int count = existing.size() + 1;
+        long count = existing + 1;
         return base + "-" + count;
     }
 }
