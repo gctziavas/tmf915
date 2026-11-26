@@ -54,7 +54,7 @@ class CallbackUrlPolicyTest {
                 "http://metadata.internal/",
                 "http://127.0.0.1:3306/",
                 "http://localhost-alias.invalid/".replace("localhost-alias.invalid", "127.0.0.2"),
-                "http://10.0.0.5/", "http://172.16.100.94:8080/", "http://192.168.1.10/",
+                "http://10.0.0.5/", "http://172.16.0.10:8080/", "http://192.168.1.10/",
                 "http://100.64.0.1/",                         // carrier-grade NAT
                 "http://0.0.0.0:13082/",
                 "http://[::1]/", "http://[fd00::1]/", "http://[fe80::1]/",

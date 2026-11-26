@@ -185,4 +185,49 @@ class MlflowDeploymentServiceUnitTest {
         assertTrue(result.getMessage().contains("virtualenv failed too"), result.getMessage());
         assertEquals("http://localhost:5000", runner.calls.get(0).env().get("MLFLOW_TRACKING_URI"));
     }
+
+    // ── serving-base-url (handoff 4.6) ──────────────────────────────────
+
+    private String deployedEndpoint(String servingBaseUrl, String defaultHost, String targetHost) throws Exception {
+        ReflectionTestUtils.setField(service, "servingBaseUrl", servingBaseUrl);
+        ReflectionTestUtils.setField(service, "dockerHost", defaultHost);
+        runner.when("docker run", ok("cid"));
+        return service.deployContainer("img", "n-1", null, targetHost, "id-1").getInvocationsUrl();
+    }
+
+    @Test
+    void servingBaseUrl_replacesLocalhostOnTheDefaultHost() throws Exception {
+        assertEquals("http://models.example.com:3000/invocations",
+                deployedEndpoint("http://models.example.com/", "unix:///var/run/docker.sock", "unix:///var/run/docker.sock"));
+    }
+
+    @Test
+    void servingBaseUrl_templateWithPort() throws Exception {
+        assertEquals("https://gw.example.com/models/3000/invocations",
+                deployedEndpoint("https://gw.example.com/models/{port}", "", null));
+    }
+
+    @Test
+    void servingBaseUrl_doesNotApplyToAnotherDockerHost() throws Exception {
+        assertEquals("http://10.0.0.6:3000/invocations",
+                deployedEndpoint("http://models.example.com", "unix:///var/run/docker.sock", "tcp://10.0.0.6:2375"));
+    }
+
+    @Test
+    void withoutServingBaseUrl_theDockerHostAddressIsUsed() throws Exception {
+        assertEquals("http://localhost:3000/invocations", deployedEndpoint("", "", null));
+        // MlflowModelService always passes the resolved host (the default when none was given).
+        assertEquals("http://10.0.0.5:3000/invocations", deployedEndpoint("", "tcp://10.0.0.5:2375", "tcp://10.0.0.5:2375"));
+    }
+
+    @Test
+    void servingBaseUrl_invalidValuesStopStartup() {
+        for (String bad : new String[]{"models.example.com", "ftp://models.example.com",
+                "http://models.example.com:8000", "http://models.example.com/models"}) {
+            assertThrows(IllegalStateException.class, () -> MlflowDeploymentService.validateServingBaseUrl(bad), bad);
+        }
+        MlflowDeploymentService.validateServingBaseUrl("");
+        MlflowDeploymentService.validateServingBaseUrl("http://models.example.com");
+        MlflowDeploymentService.validateServingBaseUrl("https://gw.example.com:8443/models/{port}");
+    }
 }

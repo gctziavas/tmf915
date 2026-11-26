@@ -53,7 +53,13 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  */
 // Runs with src/main/resources/application.yml plus the overrides in
 // src/test/resources/application.properties (H2, no MLflow).
-@SpringBootTest(properties = "spring.jpa.properties.hibernate.generate_statistics=true")
+// MLflow is enabled here (off by default in tests) because the dockerHost checks live in the
+// MLflow deployer; the tracking URI is unreachable on purpose and is never called.
+@SpringBootTest(properties = {
+        "spring.jpa.properties.hibernate.generate_statistics=true",
+        "mlflow.enabled=true",
+        "mlflow.tracking-uri=http://127.0.0.1:1"
+})
 class AiModelListHttpTest {
 
     private static final String BASE = "/tmf-api/AiM/v4";

@@ -28,11 +28,10 @@ Requires Docker with Compose v2. The image builds the application itself.
 
 ```bash
 # Everything local: MySQL, Keycloak, MinIO, MLflow and the API
-export MLFLOW_TRACKING_URI=http://mlflow:5000 MLFLOW_S3_ENDPOINT_URL=http://minio:9000
 docker compose --profile full up -d --build
 ```
 
-On a new machine, first follow [Run the platform](docs/USER_GUIDE.md#1-run-the-platform): `docker-compose.yml` sets the token issuer to a lab address, and the API rejects every token until it matches yours.
+This works as is when clients use `localhost`. For access from other machines, or an MLflow you already run, see [Run the platform](docs/USER_GUIDE.md#1-run-the-platform).
 
 | | URL |
 |---|---|

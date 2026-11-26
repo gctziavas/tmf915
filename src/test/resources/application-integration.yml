@@ -17,10 +17,12 @@ spring:
 
 mlflow:
   enabled: true
-  tracking-uri: "http://172.16.100.94:5000"
+  # Integration tests need a real MLflow, MinIO and Docker daemon. Point them at yours with
+  # TMF915_IT_MLFLOW_URI, TMF915_IT_S3_URL and TMF915_IT_DOCKER_HOST.
+  tracking-uri: "${TMF915_IT_MLFLOW_URI:http://localhost:5000}"
   connection-timeout: 30000
   read-timeout: 60000
-  s3-endpoint-url: "http://172.16.100.94:9010"
+  s3-endpoint-url: "${TMF915_IT_S3_URL:http://localhost:9010}"
   s3-access-key: "minioadmin"
   s3-secret-key: "minioadmin"
   sync:
@@ -28,7 +30,7 @@ mlflow:
     interval-ms: 60000
     base-url: ""
   docker:
-    host: "tcp://172.16.100.94:2375"
+    host: "${TMF915_IT_DOCKER_HOST:unix:///var/run/docker.sock}"
     container-port: 8080
     host-port-start: 5100
     host-port-end: 5200

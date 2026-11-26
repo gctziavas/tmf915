@@ -15,6 +15,7 @@ import org.mlflow.api.proto.Service.RunTag;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
@@ -33,6 +34,7 @@ import java.util.Optional;
  * When a model is deployed/served, it becomes an AiModel instance.
  */
 @Service
+@ConditionalOnProperty(name = "mlflow.enabled", havingValue = "true")
 public class MlflowSpecificationService {
 
     private static final Logger log = LoggerFactory.getLogger(MlflowSpecificationService.class);
@@ -108,6 +110,7 @@ public class MlflowSpecificationService {
         AiModelSpecificationCreate spec = new AiModelSpecificationCreate();
         spec.setName(experimentName);
         spec.setVersion(info.getModelId());
+        spec.setLifecycleStatus(defaultLifecycleStatus);
 
         // Build description from params
         String configVersion = getLoggedModelParam(loggedModel, "config.version");
@@ -258,6 +261,7 @@ public class MlflowSpecificationService {
         spec.setName(modelName);
         spec.setVersion(version);
         spec.setDescription(description);
+        spec.setLifecycleStatus(defaultLifecycleStatus);
 
         // Add specification characteristics
         addMlFlowCharacteristics(spec, modelVersion);

@@ -55,13 +55,16 @@ services:
       SPRING_DATASOURCE_USERNAME: root
       SPRING_DATASOURCE_PASSWORD: letmein
       # ── Keycloak / OAuth2 ──
-      SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI: http://172.16.100.94:8080/auth/realms/openslice
-      KEYCLOAK_ISSUER_URI: http://172.16.100.94:8080/auth/realms/openslice
+      # Tokens are accepted only if their issuer equals this exactly, and Keycloak sets the issuer
+      # from the address it was called on. Set KEYCLOAK_ISSUER_URI if clients get tokens from
+      # another address than localhost (e.g. http://my-server:8080/auth/realms/openslice).
+      SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI: ${KEYCLOAK_ISSUER_URI:-http://localhost:8080/auth/realms/openslice}
+      KEYCLOAK_ISSUER_URI: ${KEYCLOAK_ISSUER_URI:-http://localhost:8080/auth/realms/openslice}
       SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWK_SET_URI: http://keycloak:8080/auth/realms/openslice/protocol/openid-connect/certs
-      # ── MLflow (Configurable via env, defaults to external) ──
+      # ── MLflow: defaults to the 'full' profile's services; set both for an external MLflow ──
       MLFLOW_ENABLED: "true"
-      MLFLOW_TRACKING_URI: ${MLFLOW_TRACKING_URI:-http://172.16.100.94:5000}
-      MLFLOW_S3_ENDPOINT_URL: ${MLFLOW_S3_ENDPOINT_URL:-http://172.16.100.94:9010}
+      MLFLOW_TRACKING_URI: ${MLFLOW_TRACKING_URI:-http://mlflow:5000}
+      MLFLOW_S3_ENDPOINT_URL: ${MLFLOW_S3_ENDPOINT_URL:-http://minio:9000}
       MLFLOW_S3_ACCESS_KEY: minioadmin
       MLFLOW_S3_SECRET_KEY: minioadmin
       AWS_ACCESS_KEY_ID: minioadmin
@@ -106,6 +109,24 @@ services:
     volumes:
       - minio-data:/data
 
+  # ── MinIO bucket for MLflow (Optional - 'full' profile) ───────────
+  # One-shot: waits for MinIO, creates the 'mlflow' bucket the mlflow service stores artifacts
+  # in (s3://mlflow/), then exits. Safe to re-run.
+  minio-init:
+    image: minio/mc
+    profiles: ["full"]
+    depends_on:
+      - minio
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        until mc alias set local http://minio:9000 minioadmin minioadmin >/dev/null 2>&1; do
+          echo "waiting for MinIO"; sleep 2
+        done
+        mc mb --ignore-existing local/mlflow
+    restart: "no"
+
   # ── MLflow (Optional - 'full' profile) ────────────────────────────
   mlflow:
     image: ghcr.io/mlflow/mlflow
@@ -119,7 +140,8 @@ services:
       MLFLOW_S3_ENDPOINT_URL: http://minio:9000
     command: mlflow server --backend-store-uri sqlite:///mlflow.db --default-artifact-root s3://mlflow/ --host 0.0.0.0
     depends_on:
-      - minio
+      minio-init:
+        condition: service_completed_successfully
 
 volumes:
   mysql-data:

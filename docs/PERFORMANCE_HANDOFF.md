@@ -47,13 +47,14 @@ Not verified: the running application was never called. That the HTTP layer uses
 - **Part 1: done** and committed. See "Part 1 outcome" at the end of Part 1.
 - **Part 2: done** and committed. Item 5 was only partly done (not profiled). See "Part 2 outcome" at the end of Part 2.
 - **Part 3: done** and committed (up to `77f162a`). See "Part 3 outcome" at the end of Part 3.
-- **Part 4: not started.** Correctness and configuration issues found while rewriting the documentation (2026-11-26). Nothing is fixed yet; items 4.3 and 4.8 need the owner's decision.
+- **Part 4:** 4.1, 4.2, 4.3 (per D2), 4.5, 4.6 (per D4), 4.7 done (PRs 3 to 5). Open: 4.4 (PR 6); 4.8 (owner decision D5: document now, inference proxy after release).
 - **Part 5: in progress**, following [`BUG_FIX_PLAN.md`](BUG_FIX_PLAN.md).
   - **PR 1:** committed (`14aef6b`): 5.1 steps 1 and 4, 5.13 step 1.
   - **PR 2:** committed (`4b83a01`): 5.1 steps 2 and 3, 5.2, 5.3, 5.4, 5.10, 5.13 step 2. See "PR 2 outcome" at the end of Part 5.
   - **PR 3:** committed (`66aa1de`): 4.3 (per D2), 5.7, 5.12, 5.11 (part). See "PR 3 outcome" at the end of Part 5.
-  - **PR 4:** done, uncommitted: 5.6, 5.5, 4.1. See "PR 4 outcome" at the end of Part 5.
-  - **Open:** 5.8, 5.9, the rest of 5.11 (and Part 4 items 4.2, 4.4 to 4.7).
+  - **PR 4:** committed (`71c3994`): 5.6, 5.5, 4.1. See "PR 4 outcome" at the end of Part 5.
+  - **PR 5:** done, uncommitted: 5.8, the rest of 5.11, and Part 4 items 4.2, 4.5, 4.6, 4.7. See "PR 5 outcome" at the end of Part 5.
+  - **Open:** 5.9 and 4.4 (PR 6).
 
 ## Part 1: fix the AiModel list (requested)
 
@@ -613,6 +614,32 @@ Not checked: a real MLflow build, and the plan's manual check (two models with t
 **Client-visible:** webhook subscribers receive `active`, `designed` and `terminated` events from background work. `INTEGRATION_GUIDE.md` sections 4.3, 5, 7 and 8 and `AI_MODEL_DEPLOYMENT_FLOW.md` section 4 are updated. `MlflowDeployerIntegrationTest` was adapted to the new contract; it was compiled but not run (it needs MLflow and Docker).
 
 `mvn clean test`: 298 tests, all passing.
+
+### PR 5 outcome (5.8, 5.11 rest, 4.2, 4.5, 4.6, 4.7)
+
+Done one item at a time, with the tree building after each; the per-item details are in `BUG_FIX_PLAN.md` under PR 5.
+
+| Item | Change | Verified by |
+|---|---|---|
+| 5.8 | `MlflowSpecificationService` is `@ConditionalOnProperty(mlflow.enabled)` like the other MLflow beans, so the application starts with `mlflow.enabled=false`. Tests default to it; `AiModelListHttpTest` enables MLflow because the `dockerHost` checks live in `MlflowDeployer`. | `MlflowDisabledStartupTest`; every other Spring test now starts without MLflow. |
+| 4.5 | Specifications created from MLflow get `lifecycleStatus` from `aimodel.specification.default-lifecycle-status` (default `Active`), on both the logged-model and the classic-registry path. | `MlflowSpecificationServiceUnitTest`. |
+| 4.6 (D4) | `aimodel.deployment.serving-base-url` is implemented in `MlflowDeploymentService.endpointFor`: for containers on the default Docker host, the endpoint is the base plus `:<port>`, or a template with `{port}` replaced. Another `dockerHost` keeps its own address. An invalid value (no http(s) scheme or host; a port or path without `{port}`) stops startup. | `MlflowDeploymentServiceUnitTest` (base, template, other host, unset, invalid values). |
+| 4.2, 5.11 rest | `docker-compose.yml`: the issuer variables default to `http://localhost:8080/auth/realms/openslice` (override with `KEYCLOAK_ISSUER_URI`); MLflow and MinIO default to the `full` profile's `http://mlflow:5000` and `http://minio:9000`. The `docker` profile in `application.yml` uses the same names. `application-integration.yml` reads `TMF915_IT_MLFLOW_URI`, `TMF915_IT_S3_URL` and `TMF915_IT_DOCKER_HOST`. The lab address `172.16.100.94` is gone from code, config and guides. | `docker compose config` shows the new defaults; full test suite. |
+| 4.7 | A one-shot `minio-init` service (`minio/mc`, `full` profile) creates the `mlflow` bucket; `mlflow` waits for it to complete. | `docker compose config` only. A live check was interrupted, so the first run of the acceptance test below is its real test. |
+
+**Found and fixed along the way:** the application's explicit `@ComponentScan` has no `TypeExcludeFilter`, so a nested `@TestConfiguration` leaked its beans into every test context. The fake deployer in `DeploymentSchedulerSpringTest` is now a plain class added with `@Import`. Keep test-only beans out of `@TestConfiguration`, or add the Boot exclude filters to that `@ComponentScan`.
+
+**Release notes:**
+
+- **Backfill** `lifecycleStatus` on existing specifications: `UPDATE aim915_aimspec SET lifecycle_status = 'Active' WHERE lifecycle_status IS NULL;`
+- **Endpoints:** models deployed before `serving-base-url` is set keep their old `endpoint` until redeployed.
+- **Docker Compose:** the quick start needs no exports. An external MLflow needs `MLFLOW_TRACKING_URI` and `MLFLOW_S3_ENDPOINT_URL`, as before, and other client addresses need `KEYCLOAK_ISSUER_URI`.
+
+**Not covered:** Swagger UI's OAuth URLs (`springdoc.oAuthFlow.*`) still point at `localhost:8080`, so signing in through Swagger from another machine needs `SPRINGDOC_OAUTHFLOW_AUTHORIZATIONURL` and `SPRINGDOC_OAUTHFLOW_TOKENURL`.
+
+**Still to do: the plan's acceptance run on a clean VM.** `git clone` → `docker compose --profile full up -d --build` → get a token → `GET /aiModel` returns `200`, and a logged sample model appears in the catalog within a minute. It also verifies `minio-init`.
+
+`mvn clean test`: 305 tests, all passing.
 
 ## Related bugs, not performance
 

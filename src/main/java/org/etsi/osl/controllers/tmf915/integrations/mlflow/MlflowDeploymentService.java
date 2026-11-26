@@ -84,6 +84,14 @@ public class MlflowDeploymentService {
     @Value("${mlflow.s3-secret-key:}")
     private String s3SecretKey;
 
+    /**
+     * Public base URL of model endpoints on the default Docker host (handoff 4.6). Empty: the
+     * endpoint uses the Docker host's address, which is {@code localhost} for a local socket.
+     * See {@link #endpointFor}.
+     */
+    @Value("${aimodel.deployment.serving-base-url:}")
+    private String servingBaseUrl;
+
     public MlflowDeploymentService(ProcessRunner processRunner) {
         this.processRunner = processRunner;
     }
@@ -261,7 +269,7 @@ public class MlflowDeploymentService {
             ProcessRunner.ProcessResult result = processRunner.run(cmd, dockerEnv(targetHost), commandTimeout());
             if (result.succeeded()) {
                 String containerId = lastLine(result.stdout());
-                String endpoint = "http://" + resolveEndpointHost(targetHost) + ":" + port;
+                String endpoint = endpointFor(targetHost, port);
                 log.info("Container deployed: image={}, port={}, endpoint={}", imageName, port, endpoint);
                 return new DeployResult(containerId, endpoint, imageName, true,
                         "Container deployed successfully on port " + port, targetHost, port);
@@ -501,6 +509,63 @@ public class MlflowDeploymentService {
         }
         if (s3SecretKey != null && !s3SecretKey.isEmpty()) {
             env.put("AWS_SECRET_ACCESS_KEY", s3SecretKey);
+        }
+    }
+
+    /**
+     * Base URL of a model endpoint (without {@code /invocations}).
+     *
+     * <p>With {@code aimodel.deployment.serving-base-url} set, and the container on the default
+     * Docker host ({@code mlflow.docker.host}), the endpoint is built from it: {@code {port}} is
+     * replaced by the host port, or, without the placeholder, {@code :<port>} is appended. An
+     * explicit other {@code dockerHost} keeps its own address: one URL cannot be right for several
+     * hosts. Otherwise the Docker host's address is used, {@code localhost} for a local socket.
+     */
+    String endpointFor(String targetHost, int port) {
+        if (servingBaseUrl != null && !servingBaseUrl.isBlank() && isDefaultHost(targetHost)) {
+            String base = servingBaseUrl.strip();
+            while (base.endsWith("/")) {
+                base = base.substring(0, base.length() - 1);
+            }
+            return base.contains("{port}") ? base.replace("{port}", String.valueOf(port)) : base + ":" + port;
+        }
+        return "http://" + resolveEndpointHost(targetHost) + ":" + port;
+    }
+
+    private boolean isDefaultHost(String targetHost) {
+        String target = targetHost == null ? "" : targetHost.strip();
+        String configured = dockerHost == null ? "" : dockerHost.strip();
+        return target.isEmpty() || target.equals(configured);
+    }
+
+    /** Fails startup on a serving-base-url that would produce broken endpoints. */
+    @jakarta.annotation.PostConstruct
+    void validateServingBaseUrl() {
+        validateServingBaseUrl(servingBaseUrl);
+    }
+
+    static void validateServingBaseUrl(String value) {
+        if (value == null || value.isBlank()) {
+            return;
+        }
+        String template = value.strip();
+        boolean hasPlaceholder = template.contains("{port}");
+        java.net.URI uri;
+        try {
+            uri = new java.net.URI(template.replace("{port}", "1"));
+        } catch (java.net.URISyntaxException e) {
+            throw new IllegalStateException("aimodel.deployment.serving-base-url is not a valid URL: " + value);
+        }
+        String scheme = uri.getScheme() == null ? "" : uri.getScheme().toLowerCase(Locale.ROOT);
+        if (!(scheme.equals("http") || scheme.equals("https")) || uri.getHost() == null) {
+            throw new IllegalStateException("aimodel.deployment.serving-base-url must start with http:// or https:// "
+                    + "and name a host: " + value);
+        }
+        String path = uri.getPath() == null ? "" : uri.getPath();
+        if (!hasPlaceholder && (uri.getPort() != -1 || !(path.isEmpty() || path.equals("/")))) {
+            throw new IllegalStateException("aimodel.deployment.serving-base-url has a port or path but no {port} "
+                    + "placeholder, so the host port cannot be added: " + value
+                    + ". Use for example https://gateway.example.com/models/{port}");
         }
     }
 

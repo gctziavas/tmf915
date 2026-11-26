@@ -98,6 +98,7 @@ Each logged model becomes one `aiModelSpecification`:
 | `version`        | Logged model id (`m-…`)                                                                                       |
 | `description`    | Param`config.version`; else `"MLflow logged model: <config.model> (<id>)"`; else `"MLflow logged model: <id>"` |
 | `modelDataSheet` | Artifact URI                                                                                                   |
+| `lifecycleStatus` | `Active` (the server setting `aimodel.specification.default-lifecycle-status`)                               |
 
 And these `specCharacteristic` entries:
 

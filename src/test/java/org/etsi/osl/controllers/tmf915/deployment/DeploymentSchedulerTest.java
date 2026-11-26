@@ -174,7 +174,7 @@ public class DeploymentSchedulerTest {
     public void failedDeployment_noteShowsOnlyThePublicReason_andDesignedIsPublished() throws Exception {
         store("m1", ServiceStateType.RESERVED);
         String internal = "Build failed (exit 1): botocore NoSuchBucket s3://internal-bucket/secret/path "
-                + "http://172.16.100.94:9010 /home/runner/.cache/pip";
+                + "http://172.16.0.10:9010 /home/runner/.cache/pip";
         when(deployer.deploy(any())).thenThrow(new DeploymentException("Image build failed", new IOException(internal)));
 
         scheduler.executeDeployment("m1");

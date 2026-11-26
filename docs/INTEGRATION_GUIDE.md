@@ -134,7 +134,7 @@ Poll with back-off (for example every 5 s, up to 15 minutes) until `state` is no
 | Success | `active` | Characteristics `endpoint` (POST predictions here), `inferencePayloadExample` (request body template), plus `containerId`, `hostPort`, `imageName`, `dockerHost`, `deployedAt` |
 | Failure | `designed` | The last entry of `note` (author `TMF915_DeploymentScheduler`) holds the reason. You can retry with `PATCH {"state":"reserved"}`. |
 
-`endpoint` is a plain HTTP URL on the Docker host, served by the MLflow scoring server. It does not go through this API and is not authenticated. Route traffic to it from a trusted network, or put your own gateway in front of it.
+`endpoint` is a plain HTTP URL on the Docker host (or under the operator's `aimodel.deployment.serving-base-url`, if set), served by the MLflow scoring server. It does not go through this API and is not authenticated. Route traffic to it from a trusted network, or put your own gateway in front of it.
 
 ### 4.4 Stop, update, delete
 

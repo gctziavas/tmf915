@@ -26,7 +26,8 @@ class MlflowDeploymentServiceIntegrationTest {
     void getDockerHost_returnsConfiguredHost() {
         String host = deploymentService.getDockerHost();
         assertNotNull(host);
-        assertTrue(host.contains("172.16.100.94"), "Docker host should point to the configured remote host");
+        assertTrue(host.startsWith("tcp://") || host.startsWith("unix://") || host.startsWith("ssh://"),
+                "Docker host should be the configured URI (TMF915_IT_DOCKER_HOST): " + host);
     }
 
     @Test

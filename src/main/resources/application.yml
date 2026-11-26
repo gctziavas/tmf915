@@ -135,8 +135,11 @@ hub: # TMF Hub event notifications (webhooks to subscribers)
 
 aimodel: # AIM915 model management configuration
   deployment:
-    # Base URL for model serving endpoints (used in AiModel creation)
-    # Leave empty to auto-generate based on server configuration
+    # Public base URL of model endpoints on the default Docker host (mlflow.docker.host).
+    # Empty: endpoints use the Docker host's address (localhost for a local socket, which only
+    # works on that machine). Either a base such as http://models.example.com (":<port>" is
+    # appended) or a template with {port}, e.g. https://gateway.example.com/models/{port}.
+    # Deployments on another dockerHost keep that host's address.
     serving-base-url: ""
   specification:
     default-lifecycle-status: "Active"
@@ -164,8 +167,9 @@ keycloak:
   issuer-uri: http://localhost:8080/auth/realms/openslice
 
 mlflow:
-  tracking-uri: "http://172.16.100.94:5000"
-  s3-endpoint-url: "http://172.16.100.94:9010"
+  # The 'full' Compose profile's services; docker-compose.yml can override both.
+  tracking-uri: "http://mlflow:5000"
+  s3-endpoint-url: "http://minio:9000"
   s3-access-key: "minioadmin"
   s3-secret-key: "minioadmin"
   docker:

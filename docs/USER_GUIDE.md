@@ -27,29 +27,27 @@ The stack runs with Docker Compose. The `tmf915` image builds the application fr
 | `keycloak` | 8080 | Issues access tokens (realm `openslice`) |
 | `mlflow` | 5000 | Model tracking server (`full` profile only) |
 | `minio` | 9010 (API), 9011 (console) | Artifact storage for MLflow (`full` profile only) |
+| `minio-init` | none | Creates the `mlflow` bucket, then exits (`full` profile only) |
 
-### 1.1 Set the token issuer (once per machine)
+### 1.1 Token issuer
 
-The API only accepts tokens whose issuer is exactly the configured URL. `docker-compose.yml` sets it to a lab address:
+The API only accepts tokens whose issuer is exactly the configured URL, and Keycloak writes into each token the address it was called on. The default, `http://localhost:8080/auth/realms/openslice`, is right when clients get their tokens on the same machine. If they use another address (another host, a DNS name), set it before starting:
 
-```yaml
-SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI: http://172.16.100.94:8080/auth/realms/openslice
-KEYCLOAK_ISSUER_URI: http://172.16.100.94:8080/auth/realms/openslice
+```bash
+export KEYCLOAK_ISSUER_URI=http://my-server.example.com:8080/auth/realms/openslice
 ```
 
-Keycloak writes into each token the address it was called on. Change both lines to the Keycloak URL your users will request tokens from, for example `http://localhost:8080/auth/realms/openslice` on a single machine. If they don't match, every API call returns `401`.
+If the two don't match, every API call returns `401`.
 
 ### 1.2 Start
 
 **Everything local** (MySQL, Keycloak, MinIO, MLflow, API):
 
 ```bash
-export MLFLOW_TRACKING_URI=http://mlflow:5000
-export MLFLOW_S3_ENDPOINT_URL=http://minio:9000
 docker compose --profile full up -d --build
 ```
 
-Then open the MinIO console at http://localhost:9011 (`minioadmin` / `minioadmin`) and create a bucket named **`mlflow`**. The MLflow server stores artifacts in `s3://mlflow/`, and the bucket is not created automatically.
+The one-shot `minio-init` service creates the `mlflow` bucket that MLflow stores artifacts in (`s3://mlflow/`), then exits; `mlflow` starts after it. The MinIO console is at http://localhost:9011 (`minioadmin` / `minioadmin`).
 
 **With an existing MLflow and MinIO:** start only MySQL, Keycloak and the API, and point the API at your servers:
 
@@ -59,7 +57,7 @@ export MLFLOW_S3_ENDPOINT_URL=http://<minio-host>:9010
 docker compose up -d --build
 ```
 
-If you don't set them, both default to the lab host `172.16.100.94`.
+If you don't set them, the API looks for the `full` profile's services (`http://mlflow:5000`, `http://minio:9000`). To run without MLflow at all, set `MLFLOW_ENABLED=false` in `docker-compose.yml`: the catalog and models can then be managed, but nothing is synced or deployed.
 
 Keycloak needs a minute on first start. The API waits for it and for MySQL.
 
@@ -112,7 +110,7 @@ Each **AI model specification** is a model that can be deployed. Specifications 
 ```bash
 # A compact list: only the fields you ask for (id, href and @type are always included)
 curl -s -H "Authorization: Bearer $TOKEN" \
-  "$API/aiModelSpecification?fields=name,version,description"
+  "$API/aiModelSpecification?fields=name,version,description,lifecycleStatus"
 
 # Everything about one specification
 curl -s -H "Authorization: Bearer $TOKEN" "$API/aiModelSpecification/<SPEC_ID>"
@@ -173,7 +171,7 @@ To list all models: `GET $API/aiModel` (same `offset`, `limit` and `fields` opti
 
 Read two characteristics from the active model:
 
-- **`endpoint`:** the prediction URL, `http://<docker-host>:<port>/invocations`. With the local Docker socket, the host is `localhost`, which only works on the machine running Docker.
+- **`endpoint`:** the prediction URL, `http://<docker-host>:<port>/invocations`. With the local Docker socket the host is `localhost`, which only works on the machine running Docker, unless the operator sets `aimodel.deployment.serving-base-url` (see section 8).
 - **`inferencePayloadExample`:** a request body built from the model's input signature, with placeholder values.
 
 ```bash
@@ -228,7 +226,7 @@ Settings live in `src/main/resources/application.yml`. In Docker Compose, overri
 | `spring.datasource.url`, `username`, `password` | local MySQL | Database. Tables are created automatically. |
 | `keycloak.issuer-uri` | per profile | Token issuer the API accepts; must match the tokens exactly (see 1.1). |
 | `spring.security.oauth2.resourceserver.jwt.jwk-set-uri` | Keycloak certs URL | Where the API fetches Keycloak's signing keys. |
-| `mlflow.enabled` | `true` | MLflow integration. Must stay `true`; the application does not start without it. |
+| `mlflow.enabled` | `true` | MLflow integration. With `false`, the API runs without MLflow: specifications and models can be created and read, but nothing is synced from MLflow or deployed. |
 | `mlflow.tracking-uri` | `http://127.0.0.1:5000` | MLflow server. |
 | `mlflow.s3-endpoint-url`, `s3-access-key`, `s3-secret-key` | empty | MinIO/S3 holding the model artifacts. |
 | `mlflow.sync.enabled` | `true` | Publish MLflow models to the catalog automatically. |
@@ -239,6 +237,8 @@ Settings live in `src/main/resources/application.yml`. In Docker Compose, overri
 | `mlflow.docker.host-port-start`, `host-port-end` | `3000`–`7000` | Port range for model endpoints. |
 | `mlflow.docker.env-manager` | `local` | Python environment used to build images (`local`, `virtualenv`, `uv`). |
 | `mlflow.docker.command-timeout-seconds` | `30` | Timeout for Docker commands other than the image build. |
+| `aimodel.specification.default-lifecycle-status` | `Active` | `lifecycleStatus` given to specifications created from MLflow. |
+| `aimodel.deployment.serving-base-url` | empty | Public base of model endpoints on the default Docker host. `http://models.example.com` gives `http://models.example.com:<port>/invocations`; a template such as `https://gateway.example.com/models/{port}` replaces `{port}`. Empty: the Docker host's address (`localhost` for a local socket). Deployments on another `dockerHost` keep that host's address. An invalid value stops the application at startup. |
 | `hub.webhook.enabled` | `false` | Send event notifications to subscribers (see the [integration guide](INTEGRATION_GUIDE.md#5-event-notifications-webhooks)). |
 | `hub.webhook.allowed-callback-hosts` | empty | If set (comma-separated host names), only these callback hosts are accepted, including internal ones. |
 | `hub.webhook.block-private-addresses` | `true` | Refuse callbacks that resolve to loopback, link-local or private addresses. Applies when `allowed-callback-hosts` is empty. |
@@ -256,7 +256,7 @@ Settings live in `src/main/resources/application.yml`. In Docker Compose, overri
 | Model stays `reserved` | `startDate` is in the future, the image is still building (minutes), or the `platform=mlflow` characteristic is missing. |
 | Model goes back to `designed` | Read the last `note`. It gives a short reason and a reference, for example `Image build failed (reference 3f2c9a1b; details are in the server log)`. Find the details with `docker compose logs tmf915 \| grep 3f2c9a1b`. "model files not found": the artifacts are missing in MinIO. "No free host port": every port in `host-port-start`–`host-port-end` is taken. "Docker host not allowed": see `mlflow.docker.allowed-hosts`. |
 | Model disappeared from `active` after a day | `endDate` defaults to one day after `startDate`. Set `endDate` when deploying. |
-| `endpoint` not reachable | With the local Docker socket the endpoint host is `localhost`. Use the Docker machine's address, or deploy with a `tcp://` `dockerHost`. |
+| `endpoint` not reachable | With the local Docker socket the endpoint host is `localhost`. Set `aimodel.deployment.serving-base-url` (environment variable `AIMODEL_DEPLOYMENT_SERVING_BASE_URL`) to the address clients use, and redeploy; models deployed earlier keep their old endpoint. Or deploy with a `tcp://` `dockerHost`. |
 | `415 Unsupported Media Type` | Send `Content-Type: application/json`. |
 | `400` on `POST /aiModel` | The response's `errors` list names the field. The most common one is a missing `software` (`[{"id": "mlflow"}]` is enough). |
 | `400` when registering a webhook | The callback is not an `http`/`https` URL, or it points at an internal address; the response says which. See `hub.webhook.allowed-callback-hosts`. |

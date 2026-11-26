@@ -12,8 +12,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
 import org.springframework.test.context.event.ApplicationEvents;
 import org.springframework.test.context.event.RecordApplicationEvents;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
@@ -33,6 +32,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 @SpringBootTest
 @RecordApplicationEvents
+// @Import of a plain class, not a nested @TestConfiguration: the application's explicit
+// @ComponentScan would pick up @TestConfiguration classes and add this fake deployer to
+// every other test's context.
+@Import(DeploymentSchedulerSpringTest.FakeDeployer.class)
 class DeploymentSchedulerSpringTest {
 
     /** A platform deployer driven by the test. Selected by the characteristic platform=fake. */
@@ -61,14 +64,6 @@ class DeploymentSchedulerSpringTest {
                 undeployedWith.add(model.getServiceCharacteristic().stream().map(Characteristic::getName).toList());
             }
             model.getServiceCharacteristic().removeIf(c -> List.of("endpoint", "containerId").contains(c.getName()));
-        }
-    }
-
-    @TestConfiguration
-    static class FakePlatform {
-        @Bean
-        FakeDeployer fakeDeployer() {
-            return new FakeDeployer();
         }
     }
 
