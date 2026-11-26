@@ -18,6 +18,7 @@ import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.UUID;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
@@ -200,7 +201,11 @@ public class DeploymentScheduler {
                 updateModelFileExistsCharacteristic(aiModel, true);
                 return repoService.findAiModelById(aiModelId);
             } catch (Exception e) {
-                log.error("Scheduled deployment failed for AiModel {}: {}", aiModelId, e.getMessage());
+                // The note is readable by every API user; it gets a short reason and a reference.
+                // The full error (it can hold internal URLs and command output) is logged only.
+                String reference = UUID.randomUUID().toString().substring(0, 8);
+                log.error("Scheduled deployment failed for AiModel {} (reference {}): {}",
+                        aiModelId, reference, e.getMessage(), e);
                 
                 updateModelFileExistsCharacteristic(aiModel, false);
                 
@@ -214,12 +219,7 @@ public class DeploymentScheduler {
                 
                 org.etsi.osl.controllers.tmf915.model.Note errorNote = new org.etsi.osl.controllers.tmf915.model.Note();
                 
-                String errorMessage = e.getMessage();
-                if (errorMessage != null && (errorMessage.contains("Not Found") || errorMessage.contains("object not found"))) {
-                    errorNote.setText("Image build failed, model files not found");
-                } else {
-                    errorNote.setText("Deployment failed: " + errorMessage);
-                }
+                errorNote.setText(publicReason(e) + " (reference " + reference + "; details are in the server log)");
                 
                 errorNote.setDate(OffsetDateTime.now());
                 errorNote.setAuthor("TMF915_DeploymentScheduler");
@@ -273,6 +273,11 @@ public class DeploymentScheduler {
             repoService.updateAiModelState(aiModelId, ServiceStateType.TERMINATED);
             log.info("AiModel {} undeployed and set to TERMINATED (endDate reached)", aiModelId);
         });
+    }
+
+    /** The client-safe part of a deployment failure; see {@link DeploymentException}. */
+    static String publicReason(Throwable e) {
+        return e instanceof DeploymentException de ? de.getPublicReason() : "Deployment failed";
     }
 
     private PlatformDeployer findDeployer(AiModel model) {

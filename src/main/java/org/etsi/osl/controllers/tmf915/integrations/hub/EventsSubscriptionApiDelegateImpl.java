@@ -27,11 +27,14 @@ public class EventsSubscriptionApiDelegateImpl implements EventsSubscriptionApiD
     private static final Logger log = LoggerFactory.getLogger(EventsSubscriptionApiDelegateImpl.class);
 
     private final EventSubscriptionRepository repository;
+    private final CallbackUrlPolicy callbackPolicy;
     private final boolean webhooksEnabled;
 
     public EventsSubscriptionApiDelegateImpl(EventSubscriptionRepository repository,
+                                             CallbackUrlPolicy callbackPolicy,
                                              @Value("${hub.webhook.enabled:false}") boolean webhooksEnabled) {
         this.repository = repository;
+        this.callbackPolicy = callbackPolicy;
         this.webhooksEnabled = webhooksEnabled;
     }
 
@@ -40,6 +43,8 @@ public class EventsSubscriptionApiDelegateImpl implements EventsSubscriptionApiD
         if (data == null || data.getCallback() == null || data.getCallback().isBlank()) {
             return ResponseEntity.badRequest().build();
         }
+        // Throws IllegalArgumentException, which EventsSubscriptionApiController maps to 400.
+        callbackPolicy.check(data.getCallback());
 
         EventSubscription subscription = new EventSubscription();
         subscription.setId(UUID.randomUUID().toString());

@@ -240,6 +240,8 @@ Settings live in `src/main/resources/application.yml`. In Docker Compose, overri
 | `mlflow.docker.env-manager` | `local` | Python environment used to build images (`local`, `virtualenv`, `uv`). |
 | `mlflow.docker.command-timeout-seconds` | `30` | Timeout for Docker commands other than the image build. |
 | `hub.webhook.enabled` | `false` | Send event notifications to subscribers (see the [integration guide](INTEGRATION_GUIDE.md#5-event-notifications-webhooks)). |
+| `hub.webhook.allowed-callback-hosts` | empty | If set (comma-separated host names), only these callback hosts are accepted, including internal ones. |
+| `hub.webhook.block-private-addresses` | `true` | Refuse callbacks that resolve to loopback, link-local or private addresses. Applies when `allowed-callback-hosts` is empty. |
 | `server.compression.enabled` | `true` | gzip responses for clients that accept it. |
 
 ---
@@ -252,8 +254,10 @@ Settings live in `src/main/resources/application.yml`. In Docker Compose, overri
 | `403` | The user lacks the realm role `ROLE_USER`. |
 | A newly logged model is not in the catalog | Wait one or two minutes. Then check the API log (`docker compose logs tmf915 \| grep "MLflow sync"`). "no artifacts were found" means the files are not in MinIO yet; the API retries every 10 minutes. |
 | Model stays `reserved` | `startDate` is in the future, the image is still building (minutes), or the `platform=mlflow` characteristic is missing. |
-| Model goes back to `designed` | Read `note`. "model files not found": the artifacts are missing in MinIO. "Build failed": see the API log for the `mlflow models build-docker` output. |
+| Model goes back to `designed` | Read the last `note`. It gives a short reason and a reference, for example `Image build failed (reference 3f2c9a1b; details are in the server log)`. Find the details with `docker compose logs tmf915 \| grep 3f2c9a1b`. "model files not found": the artifacts are missing in MinIO. "No free host port": every port in `host-port-start`–`host-port-end` is taken. "Docker host not allowed": see `mlflow.docker.allowed-hosts`. |
 | Model disappeared from `active` after a day | `endDate` defaults to one day after `startDate`. Set `endDate` when deploying. |
 | `endpoint` not reachable | With the local Docker socket the endpoint host is `localhost`. Use the Docker machine's address, or deploy with a `tcp://` `dockerHost`. |
 | `415 Unsupported Media Type` | Send `Content-Type: application/json`. |
+| `400` on `POST /aiModel` | The response's `errors` list names the field. The most common one is a missing `software` (`[{"id": "mlflow"}]` is enough). |
+| `400` when registering a webhook | The callback is not an `http`/`https` URL, or it points at an internal address; the response says which. See `hub.webhook.allowed-callback-hosts`. |
 | Anything else | `docker compose logs -f tmf915` |

@@ -51,6 +51,7 @@ public class WebhookDispatcher {
     private static final Logger log = LoggerFactory.getLogger(WebhookDispatcher.class);
 
     private final EventSubscriptionRepository repository;
+    private final CallbackUrlPolicy callbackPolicy;
     private final ObjectMapper objectMapper;
     private final RestClient restClient;
     private final ThreadPoolExecutor executor;
@@ -64,12 +65,14 @@ public class WebhookDispatcher {
      *                       caller or growing memory without limit
      */
     public WebhookDispatcher(EventSubscriptionRepository repository,
+                             CallbackUrlPolicy callbackPolicy,
                              ObjectMapper objectMapper,
                              @Value("${hub.webhook.connect-timeout:2s}") Duration connectTimeout,
                              @Value("${hub.webhook.read-timeout:5s}") Duration readTimeout,
                              @Value("${hub.webhook.threads:4}") int threads,
                              @Value("${hub.webhook.queue-capacity:1000}") int queueCapacity) {
         this.repository = repository;
+        this.callbackPolicy = callbackPolicy;
         // The injected application ObjectMapper has no java.time support, so serialising an
         // AiModel with startDate/endDate failed and no notification was sent. A copy is
         // configured here (ISO-8601 strings, as in REST responses) to leave the shared bean as is.
@@ -160,6 +163,13 @@ public class WebhookDispatcher {
 
     private void deliver(EventSubscription subscription, String eventType, String json) {
         String callback = subscription.getCallback();
+        try {
+            // Checked again here: the subscription may predate the policy, or DNS may have changed.
+            callbackPolicy.check(callback);
+        } catch (IllegalArgumentException rejected) {
+            log.warn("Not delivering to subscriber {}: {}", subscription.getId(), rejected.getMessage());
+            return;
+        }
         try {
             restClient.post()
                     .uri(callback)

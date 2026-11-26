@@ -75,7 +75,9 @@ class WebhookDispatcherTest {
     }
 
     private WebhookDispatcher dispatcher(ObjectMapper mapper, int threads, int queueCapacity) {
-        return new WebhookDispatcher(repository, mapper, Duration.ofSeconds(1), READ_TIMEOUT, threads, queueCapacity);
+        // The subscribers here are on 127.0.0.1, which the default policy blocks on purpose.
+        CallbackUrlPolicy allowLocal = new CallbackUrlPolicy("", false);
+        return new WebhookDispatcher(repository, allowLocal, mapper, Duration.ofSeconds(1), READ_TIMEOUT, threads, queueCapacity);
     }
 
     private static AiModelDomainEvent event() {
@@ -178,5 +180,18 @@ class WebhookDispatcherTest {
 
         releaseSlow.countDown();
         dispatcher.shutdown();
+    }
+
+    @Test
+    void storedCallbackToAnInternalAddress_isNotDeliveredTo() throws Exception {
+        // E.g. a subscription registered before callbacks were validated.
+        when(repository.findAll()).thenReturn(List.of(new EventSubscription("s-internal", baseUrl + "/fast")));
+        WebhookDispatcher dispatcher = new WebhookDispatcher(repository, new CallbackUrlPolicy("", true),
+                new ObjectMapper(), Duration.ofSeconds(1), READ_TIMEOUT, 4, 100);
+
+        dispatcher.onDomainEvent(event());
+        dispatcher.shutdown();
+
+        assertTrue(fastCount.get() == 0, "delivered to 127.0.0.1 despite the policy");
     }
 }

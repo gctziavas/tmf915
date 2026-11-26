@@ -1,7 +1,3 @@
-origins: http://localhost,http://localhost:8888,http://localhost:13082,http://127.0.0.1:13082,https://localhost,
-permit-all: /tmf-api/**
-
-
 server:
   port: 13082
   servlet:
@@ -30,25 +26,20 @@ springdoc:
     use-root-path: true
     oauth:
       client-id: osapiWebClientId
-      clientsecret: "secret"
       use-pkce-with-authorization-code-grant: false
   oAuthFlow:
     authorizationUrl: http://localhost:8080/auth/realms/openslice/protocol/openid-connect/auth
     tokenUrl: http://localhost:8080/auth/realms/openslice/protocol/openid-connect/token
   show-actuator: true
 
-spring-addons:
-  issuers:
-  - uri: http://keycloak:8080/auth/realms/openslice
-    username-json-path: $.preferred_username
-    claims:
-    - jsonPath: $.realm_access.roles
-    - jsonPath: $.resource_access.*.roles
-
 spring:
   web:
     error:
-      include-message: always
+      # Exception messages stay out of error responses: an unexpected exception can carry SQL or
+      # Docker output. Expected errors (400s from the API) set their own response body. Which
+      # request fields failed validation is shown, so a client can tell why it got 400.
+      include-message: never
+      include-binding-errors: always
   ai:
     mcp:
       server:
@@ -171,14 +162,6 @@ spring:
 
 keycloak:
   issuer-uri: http://localhost:8080/auth/realms/openslice
-
-spring-addons:
-  issuers:
-  - uri: http://localhost:8080/auth/realms/openslice
-    username-json-path: $.preferred_username
-    claims:
-    - jsonPath: $.realm_access.roles
-    - jsonPath: $.resource_access.*.roles
 
 mlflow:
   tracking-uri: "http://172.16.100.94:5000"

@@ -168,4 +168,39 @@ class MlflowDeployerUnitTest {
 
         verify(deploymentService).removeImage("m-8a1e", "");
     }
+
+    // ── 5.12: client-safe failure reasons ───────────────────────────────
+
+    @Test
+    void publicReason_classifiesKnownFailures() {
+        assertEquals("Image build failed: model files not found", MlflowDeployer.publicReason(
+                new IOException("Image build failed: Build failed (exit 1): S3 object not found at s3://bucket/x")));
+        assertEquals("Image build timed out", MlflowDeployer.publicReason(
+                new IOException("Image build failed: Build failed: Build timed out after 10 minutes")));
+        assertEquals("Image build failed", MlflowDeployer.publicReason(
+                new IOException("Image build failed: Build failed (exit 1): pip resolution error")));
+        assertEquals("No free host port in the configured range", MlflowDeployer.publicReason(
+                new IOException("Container failed to start: Bind for 0.0.0.0:7000 failed: port is already allocated")));
+        assertEquals("Container failed to start", MlflowDeployer.publicReason(
+                new IOException("Container failed to start: Unable to find image")));
+        assertEquals("Docker host not allowed", MlflowDeployer.publicReason(
+                new IOException("dockerHost 'tcp://x:2375' is not in mlflow.docker.allowed-hosts")));
+        assertEquals("MLflow model not found", MlflowDeployer.publicReason(
+                new IOException("Logged model not found: m-123")));
+        assertEquals("Deployment failed", MlflowDeployer.publicReason(new RuntimeException("anything else")));
+        assertEquals("Deployment failed", MlflowDeployer.publicReason(new RuntimeException()));
+    }
+
+    @Test
+    void deploy_wrapsFailuresWithTheirPublicReason() {
+        MlflowDeployer deployer = deployer("", "");
+        AiModel model = new AiModel();
+        model.setId("m1");
+        model.addServiceCharacteristicItem(characteristic("platform", "mlflow"));
+        model.addServiceCharacteristicItem(characteristic("dockerHost", "tcp://evil:2375"));
+
+        org.etsi.osl.controllers.tmf915.deployment.DeploymentException ex = assertThrows(
+                org.etsi.osl.controllers.tmf915.deployment.DeploymentException.class, () -> deployer.deploy(model));
+        assertEquals("Docker host not allowed", ex.getPublicReason());
+    }
 }

@@ -27,7 +27,7 @@ Outcome: see the handoff, 5.1 and 5.13. `mvn clean test`: 245 tests, all passing
 - Small and self-contained, so it can merge first. It closes the "delete any container" hole for new writes.
 - Client-visible: `dockerHost` outside the allow-list now returns `400`; PATCHing `containerId` etc. has no effect; `PATCH state=active`/`terminated` and other unsupported transitions return `400`.
 
-### PR 2: rewrite the Docker command layer (5.4, 5.2, 5.3, 5.1 step 2, 5.13 step 2, 5.10) — done, uncommitted
+### PR 2: rewrite the Docker command layer (5.4, 5.2, 5.3, 5.1 step 2, 5.13 step 2, 5.10) — done, committed (`4b83a01`)
 
 Outcome: see "PR 2 outcome" in the handoff, Part 5. `mvn clean test`: 272 tests, all passing. Parts were also checked against a real Docker daemon; the manual check below is still open.
 
@@ -44,7 +44,9 @@ Client-visible: container names change (`<name>-<id8>` instead of `<name>-v<vers
 
 Manual check after merge, needs Docker and MLflow: deploy two models with the same name; both stay up; undeploy one; the other still answers.
 
-### PR 3: remaining exposure (4.3 per D2, 5.7, 5.12, 5.11 part)
+### PR 3: remaining exposure (4.3 per D2, 5.7, 5.12, 5.11 part) — done, uncommitted
+
+Outcome: see "PR 3 outcome" in the handoff, Part 5. `mvn clean test`: 288 tests, all passing.
 
 - 4.3, per D2 (network-level only): keep `/mcp/**` and `/sse/**` in `permitAll`. Document in `INTEGRATION_GUIDE.md` section 6, `USER_GUIDE.md` and the README that the API port must not be reachable from untrusted networks, or the MCP paths must be blocked at a reverse proxy. Give an example rule. Add a startup log line saying the MCP endpoints are unauthenticated.
 - 5.7: validate webhook callbacks.

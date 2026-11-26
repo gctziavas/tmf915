@@ -441,6 +441,27 @@ class AiModelListHttpTest {
                 .andExpect(status().isBadRequest());
     }
 
+    // ── Bug-fix plan PR 3: webhook callbacks (handoff 5.7) ──────────────
+
+    @Test
+    void hubRejectsCallbackToCloudMetadata() throws Exception {
+        mockMvc.perform(post(BASE + "/hub")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"callback\":\"http://169.254.169.254/latest/meta-data/\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.content()
+                        .string(containsString("internal address")));
+    }
+
+    @Test
+    void hubAcceptsPublicCallback() throws Exception {
+        mockMvc.perform(post(BASE + "/hub")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"callback\":\"https://93.184.216.34/tmf915/events\"}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.id").exists());
+    }
+
     @Test
     void responsesLeaveOutNullFields() throws Exception {
         String models = mockMvc.perform(get(BASE + "/aiModel")).andReturn().getResponse().getContentAsString();

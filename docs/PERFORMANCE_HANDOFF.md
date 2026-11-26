@@ -50,8 +50,9 @@ Not verified: the running application was never called. That the HTTP layer uses
 - **Part 4: not started.** Correctness and configuration issues found while rewriting the documentation (2026-11-26). Nothing is fixed yet; items 4.3 and 4.8 need the owner's decision.
 - **Part 5: in progress**, following [`BUG_FIX_PLAN.md`](BUG_FIX_PLAN.md).
   - **PR 1:** committed (`14aef6b`): 5.1 steps 1 and 4, 5.13 step 1.
-  - **PR 2:** done, uncommitted: 5.1 steps 2 and 3, 5.2, 5.3, 5.4, 5.10, 5.13 step 2. See "PR 2 outcome" at the end of Part 5.
-  - **Open:** 5.5, 5.6, 5.7, 5.8, 5.9, 5.11, 5.12.
+  - **PR 2:** committed (`4b83a01`): 5.1 steps 2 and 3, 5.2, 5.3, 5.4, 5.10, 5.13 step 2. See "PR 2 outcome" at the end of Part 5.
+  - **PR 3:** done, uncommitted: 4.3 (per D2), 5.7, 5.12, 5.11 (part). See "PR 3 outcome" at the end of Part 5.
+  - **Open:** 5.5, 5.6, 5.8, 5.9, the rest of 5.11.
 
 ## Part 1: fix the AiModel list (requested)
 
@@ -565,6 +566,31 @@ Not checked: a real MLflow build, and the plan's manual check (two models with t
 **Docs updated:** `AI_MODEL_DEPLOYMENT_FLOW.md` section 3, `INTEGRATION_GUIDE.md` 4.4 and section 7, `USER_GUIDE.md` section 6.
 
 `mvn clean test`: 272 tests, all passing.
+
+### PR 3 outcome (4.3 per D2, 5.7, 5.12, 5.11 part)
+
+| Item | Change | Verified by |
+|---|---|---|
+| 4.3 (D2: network-level only) | `/sse` and `/mcp/**` stay in `permitAll`. `McpServerConfiguration` logs a WARN at startup naming the unauthenticated paths. `INTEGRATION_GUIDE.md` section 6 explains the exposure and gives an nginx rule that limits the paths to the agents' network; section 8 and the README mention it. | Code review; the warning appears in the test logs. |
+| 5.7 | New `integrations/hub/CallbackUrlPolicy`. It accepts only absolute `http`/`https` URLs. With `hub.webhook.allowed-callback-hosts` set, only listed hosts are accepted, internal ones included. Otherwise, with `hub.webhook.block-private-addresses` (default `true`), the host is resolved and rejected if any address is loopback, link-local, RFC 1918, IPv6 ULA, `100.64/10`, `0/8` or multicast. It is checked on registration (`EventsSubscriptionApiDelegateImpl`; `EventsSubscriptionApiController` maps `IllegalArgumentException` to `400` with the reason) and again before every delivery (`WebhookDispatcher.deliver`). | `CallbackUrlPolicyTest` (stub resolver, no DNS: metadata IP, loopback, private ranges, IPv6, mixed public and private answers, non-http schemes, unresolvable, allow-list); `WebhookDispatcherTest` (a stored internal callback is not delivered to); `AiModelListHttpTest` (hub POST with `169.254.169.254` gets `400`, public IP gets `201`); `ErrorResponseTest` (`400` body states the reason on a real server). |
+| 5.12 | New `deployment/DeploymentException` with a client-safe `publicReason`. `MlflowDeployer.deploy` wraps every failure, with the reason classified by `MlflowDeployer.publicReason`: image build failed / timed out / model files not found, no free host port, container failed to start, Docker host not allowed, MLflow model not found, otherwise "Deployment failed". `DeploymentScheduler` stores only `<reason> (reference <8 hex>; details are in the server log)` and logs the full exception, with stack trace, under the same reference. Errors that are not `DeploymentException` give "Deployment failed". | `DeploymentSchedulerTest` (a failure carrying S3 URLs, a lab IP and exit codes yields a note with none of them; an unclassified error yields the generic reason); `MlflowDeployerUnitTest` (classification table; `deploy` throws `DeploymentException`). |
+| 5.11 (part) | Removed from `application.yml`: `origins`, `permit-all` (nothing read them), `spring-addons.issuers` in both profiles (not a dependency), `springdoc.swagger-ui.oauth.clientsecret` (the client is public). `spring.web.error.include-message` changed from `always` to `never`, so unexpected exceptions (SQL, command output) no longer reach clients; deliberate `400`s set their own body. Added `include-binding-errors: always`, so validation `400`s name the failing field. This also fixes the empty `400` for a missing `software` found in PR 1. | `ErrorResponseTest` (new, real port, mocked `JwtDecoder`): missing `software` gives a `400` naming the field; the known `500` (4.4) has no `message`; a rejected callback still explains itself. |
+
+**Client-visible:**
+
+- **Webhooks:** callbacks to internal addresses are refused with `400`.
+- **Failure notes:** they show a short reason and a reference instead of the raw error.
+- **`500` responses:** they no longer include the exception message.
+- **Validation `400`s:** they now list the failing fields.
+
+**Docs updated:**
+
+- `INTEGRATION_GUIDE.md` sections 3, 5, 6, 8;
+- `USER_GUIDE.md` section 8 (new settings) and troubleshooting;
+- `MODEL_PUBLISHING_GUIDE.md` troubleshooting (two rows, which also fixes the spacing an editor formatter had removed in them; the rest of that file still has the formatter's spacing problems in its tables);
+- `README.md` access bullet.
+
+`mvn clean test`: 288 tests, all passing.
 
 ## Related bugs, not performance
 

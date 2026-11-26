@@ -1,5 +1,6 @@
 package org.etsi.osl.controllers.tmf915.integrations.mlflow;
 
+import org.etsi.osl.controllers.tmf915.deployment.DeploymentException;
 import org.etsi.osl.controllers.tmf915.deployment.PlatformDeployer;
 import org.etsi.osl.controllers.tmf915.model.AiModel;
 import org.etsi.osl.controllers.tmf915.model.Characteristic;
@@ -91,6 +92,52 @@ public class MlflowDeployer implements PlatformDeployer {
 
     @Override
     public void deploy(AiModel model) throws IOException {
+        try {
+            deployUnclassified(model);
+        } catch (DeploymentException e) {
+            throw e;
+        } catch (IOException | RuntimeException e) {
+            throw new DeploymentException(publicReason(e), e);
+        }
+    }
+
+    /**
+     * A short, client-safe description of a deployment failure (handoff 5.12). The model's notes
+     * show only this; the full message (build output, S3 URLs, paths) is logged by the scheduler.
+     */
+    static String publicReason(Throwable e) {
+        String msg = e.getMessage() == null ? "" : e.getMessage().toLowerCase(java.util.Locale.ROOT);
+        if (msg.contains("allowed-hosts")) {
+            return "Docker host not allowed";
+        }
+        if (msg.contains("logged model not found")) {
+            return "MLflow model not found";
+        }
+        if (msg.contains("missing mlflowmodelid")) {
+            return "The model has no MLflow model reference";
+        }
+        if (msg.contains("has no artifact uri")) {
+            return "Model files not found";
+        }
+        if (msg.startsWith("image build failed")) {
+            if (msg.contains("timed out")) {
+                return "Image build timed out";
+            }
+            if (msg.contains("not found") || msg.contains("nosuchkey") || msg.contains("no such file")) {
+                return "Image build failed: model files not found";
+            }
+            return "Image build failed";
+        }
+        if (msg.startsWith("container failed to start")) {
+            if (msg.contains("port is already allocated") || msg.contains("address already in use")) {
+                return "No free host port in the configured range";
+            }
+            return "Container failed to start";
+        }
+        return "Deployment failed";
+    }
+
+    private void deployUnclassified(AiModel model) throws IOException {
         String dockerHost = sanitizeDockerHost(getCharacteristicValue(model, "dockerHost"));
         // Also checked here, not only on create/PATCH, for rows stored before the allow-list existed.
         if (!isAllowedDockerHost(dockerHost)) {

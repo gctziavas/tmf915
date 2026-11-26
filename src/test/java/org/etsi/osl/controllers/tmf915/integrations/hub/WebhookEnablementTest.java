@@ -23,6 +23,7 @@ class WebhookEnablementTest {
                     .setConversionService(new org.springframework.boot.convert.ApplicationConversionService()))
             .withBean(EventSubscriptionRepository.class, () -> mock(EventSubscriptionRepository.class))
             .withBean(ObjectMapper.class, ObjectMapper::new)
+            .withBean(CallbackUrlPolicy.class, () -> new CallbackUrlPolicy("", true))
             .withUserConfiguration(WebhookDispatcher.class);
 
     @Test
@@ -46,7 +47,8 @@ class WebhookEnablementTest {
     void registrationIsStillAcceptedWhenDisabled() {
         EventSubscriptionRepository repository = mock(EventSubscriptionRepository.class);
         when(repository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
-        EventsSubscriptionApiDelegateImpl delegate = new EventsSubscriptionApiDelegateImpl(repository, false);
+        EventsSubscriptionApiDelegateImpl delegate =
+                new EventsSubscriptionApiDelegateImpl(repository, new CallbackUrlPolicy("", false), false);
 
         EventSubscriptionInput input = new EventSubscriptionInput();
         input.setCallback("http://subscriber.example/listener");
