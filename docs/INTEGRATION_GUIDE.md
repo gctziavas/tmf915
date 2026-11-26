@@ -228,7 +228,7 @@ Without `format`, the download is the primary format (`artifactFormat`). The sim
 
 **Time limit.** A download that takes longer than `aimodel.artifacts.download-timeout` (15 minutes by default) is cut off. The client then has an incomplete zip, which `unzip -t` rejects. Errors after the first bytes have been sent cannot change the `200` status, so always check the zip, for example by comparing the extracted size with `size`. There is no resume (`Range`) support; download again.
 
-Every download is logged on the server with the user (token subject), the specification, the format and the bytes sent.
+Every download is logged on the server with the user (the token's `sub`, or its `preferred_username` if it has no `sub`), the specification, the format and the bytes sent.
 
 ### 5.3 Formats
 

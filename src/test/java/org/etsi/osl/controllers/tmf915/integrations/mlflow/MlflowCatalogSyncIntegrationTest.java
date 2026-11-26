@@ -10,6 +10,8 @@ import org.junit.jupiter.api.Test;
 import org.mlflow.api.proto.Service.Experiment;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.annotation.DirtiesContext;
+import org.springframework.test.annotation.DirtiesContext.MethodMode;
 import org.springframework.test.context.ActiveProfiles;
 
 import java.util.ArrayList;
@@ -58,7 +60,14 @@ class MlflowCatalogSyncIntegrationTest {
         createdSpecIds.clear();
     }
 
+    /**
+     * Needs a sync that has not run yet: the sync remembers the models it has published and does
+     * not recreate their specifications after a delete (until a restart, as documented in
+     * MODEL_PUBLISHING_GUIDE.md section 6). Without a fresh context this test failed whenever it
+     * ran after {@link #syncModels_isIdempotent()}.
+     */
     @Test
+    @DirtiesContext(methodMode = MethodMode.BEFORE_METHOD)
     void syncModels_createsSpecificationsFromLoggedModels() {
         List<LoggedModel> loggedModels = mlflowClientService.searchAllLoggedModels();
         assumeFalse(loggedModels.isEmpty(), "No logged models — skipping");

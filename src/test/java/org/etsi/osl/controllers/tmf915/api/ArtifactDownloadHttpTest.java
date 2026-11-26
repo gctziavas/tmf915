@@ -8,8 +8,11 @@ import org.etsi.osl.controllers.tmf915.model.CharacteristicValueSpecification;
 import org.etsi.osl.controllers.tmf915.reposervices.AiModelSpecificationRepositoryService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.context.annotation.Import;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -45,6 +48,7 @@ import static org.mockito.Mockito.when;
         properties = "aimodel.artifacts.max-download-bytes=1000")
 // A plain class, not a nested @TestConfiguration: see DeploymentSchedulerSpringTest.
 @Import(ArtifactDownloadHttpTest.Store.class)
+@ExtendWith(OutputCaptureExtension.class)
 class ArtifactDownloadHttpTest {
 
     static class Store {
@@ -62,7 +66,11 @@ class ArtifactDownloadHttpTest {
     @LocalServerPort
     private int port;
 
-    /** Token "user" has ROLE_USER; token "no-role" has no roles. */
+    /**
+     * Token "user" has ROLE_USER; token "no-role" has no roles. Token "user-without-sub" has
+     * ROLE_USER and {@code preferred_username} but no {@code sub}, like the demo realm's tokens
+     * before it had Keycloak's {@code basic} client scope.
+     */
     @MockitoBean
     private JwtDecoder jwtDecoder;
 
@@ -78,14 +86,15 @@ class ArtifactDownloadHttpTest {
     void setUp() {
         when(jwtDecoder.decode(anyString())).thenAnswer(inv -> {
             String token = inv.getArgument(0);
-            List<String> roles = token.equals("user") ? List.of("ROLE_USER") : List.of();
-            return Jwt.withTokenValue(token)
+            List<String> roles = token.startsWith("user") ? List.of("ROLE_USER") : List.of();
+            Jwt.Builder jwt = Jwt.withTokenValue(token)
                     .header("alg", "none")
-                    .subject("alice")
                     .issuedAt(Instant.now())
                     .expiresAt(Instant.now().plusSeconds(300))
-                    .claim("realm_access", Map.of("roles", roles))
-                    .build();
+                    .claim("realm_access", Map.of("roles", roles));
+            return token.equals("user-without-sub")
+                    ? jwt.claim("preferred_username", "alice").build()
+                    : jwt.subject("alice").build();
         });
         store.clear();
         store.put(LOCATION, "MLmodel", MLMODEL)
@@ -160,6 +169,17 @@ class ArtifactDownloadHttpTest {
                 List.copyOf(entries.keySet()));
         assertArrayEquals(MLMODEL, entries.get("MLmodel"));
         assertArrayEquals(PICKLE, entries.get("model/model.pkl"));
+    }
+
+    /** The audit log names the user even when the token has no {@code sub}. */
+    @Test
+    void tokenWithoutSubject_downloadIsLoggedWithTheUsername(CapturedOutput output) throws Exception {
+        String id = create("platform", "mlflow", "artifactUri", LOCATION);
+
+        HttpResponse<byte[]> response = download(id, "user-without-sub", null);
+
+        assertEquals(200, response.statusCode(), text(response));
+        assertTrue(output.getAll().contains("Model download: user=alice specification=" + id), output.getAll());
     }
 
     @Test

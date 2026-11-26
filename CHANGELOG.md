@@ -13,6 +13,7 @@ Client-visible changes. Releases are not tagged yet; everything below is on `mai
 
 ### Fixed
 
+- **Tokens from the demo Keycloak realm had no `sub` claim**, so the server could not tell who downloaded a model (the log said `user=null`). Keycloak 25 and later add `sub` through the `basic` client scope, which the client `osapiWebClientId` in `docker/keycloak/openslice-realm.json` did not list; it now does. The API also falls back to `preferred_username` for tokens without `sub`, from any Keycloak. An existing stack keeps the realm it imported (Keycloak skips realms that exist): add the scope in the Keycloak admin console (realm `openslice`, Clients, `osapiWebClientId`, Client scopes, Add client scope, `basic`, as Default).
 - MLflow classic Model Registry: versions whose `source` is a full URI (for example `s3://mlflow/…`) were never catalogued, because the artifact check prefixed the bucket a second time (`s3://mlflow/s3://mlflow/…`) and always found nothing.
 
 - **`PATCH` erased lists the client did not send**, on both `aiModel` and `aiModelSpecification`. A PATCH of, say, `description` or `state` emptied `note` (including deployment failure reasons), `software`, `relatedParty`, `attachment`, `constraint` and every other list attribute that was left out. Now an omitted list is kept, a sent list replaces the stored one, and `[]` clears it. `serviceCharacteristic` and `specCharacteristic` still merge by `name`. Data already erased by earlier PATCHes cannot be restored by this fix.
