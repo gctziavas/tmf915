@@ -1,6 +1,7 @@
 package org.etsi.osl.controllers.tmf915.mcp;
 
 import org.etsi.osl.controllers.tmf915.model.AiModel;
+import org.etsi.osl.controllers.tmf915.model.AiModelSpecification;
 import org.etsi.osl.controllers.tmf915.reposervices.AiModelRepositoryService;
 import org.etsi.osl.controllers.tmf915.reposervices.AiModelSpecificationRepositoryService;
 import org.springframework.ai.tool.annotation.Tool;
@@ -32,41 +33,18 @@ public class AiCatalogMcpTools {
         int safeLimit = limit != null && limit > 0 ? limit : DEFAULT_LIMIT;
 
         return specificationRepositoryService.findAllAiModelSpecifications(safeOffset, safeLimit).stream()
-                .map(spec -> new AiModelSpecificationSummary(
-                        spec.getId(),
-                        spec.getName(),
-                        spec.getVersion(),
-                        spec.getLifecycleStatus(),
-                        spec.getHref()))
+                .map(AiCatalogMcpTools::toSummary)
                 .toList();
     }
 
     @Tool(description = "Get details of an available AI model specification by id")
-        public AiModelSpecificationSummary getAiModelSpecification(
+    public AiModelSpecificationSummary getAiModelSpecification(
             @ToolParam(description = "AI model specification id") String specificationId) {
-                if (specificationId == null || specificationId.isBlank()) {
-                        return null;
-                }
-
-                int offset = 0;
-                while (true) {
-                        List<AiModelSpecificationSummary> page = listAvailableAiModelSpecifications(offset, DEFAULT_LIMIT);
-                        if (page.isEmpty()) {
-                                return null;
-                        }
-
-                        for (AiModelSpecificationSummary spec : page) {
-                                if (specificationId.equals(spec.id())) {
-                                        return spec;
-                                }
-                        }
-
-                        if (page.size() < DEFAULT_LIMIT) {
-                                return null;
-                        }
-
-                        offset += DEFAULT_LIMIT;
-                }
+        if (specificationId == null || specificationId.isBlank()) {
+            return null;
+        }
+        AiModelSpecification spec = specificationRepositoryService.findAiModelSpecificationById(specificationId);
+        return spec != null ? toSummary(spec) : null;
     }
 
     @Tool(description = "List available AI models")
@@ -77,26 +55,36 @@ public class AiCatalogMcpTools {
                 : aiModelRepositoryService.findByNameStartingWith(namePrefix);
 
         return models.stream()
-                .map(model -> new AiModelSummary(
-                        model.getId(),
-                        model.getName(),
-                        model.getState() != null ? model.getState().getValue() : null,
-                        model.getServiceSpecification() != null ? model.getServiceSpecification().getVersion() : null,
-                        model.getServiceSpecification() != null ? model.getServiceSpecification().getId() : null,
-                        model.getHref()))
+                .map(AiCatalogMcpTools::toSummary)
                 .toList();
     }
 
     @Tool(description = "Get details of an available AI model by id")
-        public AiModelSummary getAiModel(@ToolParam(description = "AI model id") String modelId) {
-                if (modelId == null || modelId.isBlank()) {
-                        return null;
-                }
+    public AiModelSummary getAiModel(@ToolParam(description = "AI model id") String modelId) {
+        if (modelId == null || modelId.isBlank()) {
+            return null;
+        }
+        AiModel model = aiModelRepositoryService.findAiModelById(modelId);
+        return model != null ? toSummary(model) : null;
+    }
 
-                return listAvailableAiModels("").stream()
-                                .filter(model -> modelId.equals(model.id()))
-                                .findFirst()
-                                .orElse(null);
+    private static AiModelSpecificationSummary toSummary(AiModelSpecification spec) {
+        return new AiModelSpecificationSummary(
+                spec.getId(),
+                spec.getName(),
+                spec.getVersion(),
+                spec.getLifecycleStatus(),
+                spec.getHref());
+    }
+
+    private static AiModelSummary toSummary(AiModel model) {
+        return new AiModelSummary(
+                model.getId(),
+                model.getName(),
+                model.getState() != null ? model.getState().getValue() : null,
+                model.getServiceSpecification() != null ? model.getServiceSpecification().getVersion() : null,
+                model.getServiceSpecification() != null ? model.getServiceSpecification().getId() : null,
+                model.getHref());
     }
 
     public record AiModelSpecificationSummary(

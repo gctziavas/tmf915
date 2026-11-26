@@ -18,6 +18,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.LongSupplier;
 
 /**
  * Periodically synchronises MLflow models with TMF 915
@@ -26,7 +27,9 @@ import java.util.concurrent.ConcurrentHashMap;
  * <p>On each tick the service:
  * <ol>
  *   <li>Fetches <em>all</em> logged models from MLflow via the Logged Models API
- *       (falls back to the classic Model Registry if no logged models are found)</li>
+ *       (falls back to the classic Model Registry if no logged models are found). Between
+ *       full searches (every {@code mlflow.sync.full-interval-ms}, default 10 minutes) only
+ *       models created since the last search are fetched, if the server supports it</li>
  *   <li>Groups them by unique key (experiment-name + model-id, or model-name + version)</li>
  *   <li>For every model that has no matching {@code AiModelSpecification}
  *       in the database, creates one</li>
@@ -51,6 +54,30 @@ public class MlflowSyncService {
     private final Set<String> syncedModels = ConcurrentHashMap.newKeySet();
     private final Map<String, Long> nextArtifactCheckTime = new ConcurrentHashMap<>();
     private static final long MISSING_ARTIFACTS_BACKOFF_MS = 10 * 60 * 1000; // 10 minutes backoff
+
+    /**
+     * Incremental searches ask for models created after (newest creation time seen - overlap),
+     * so a model created while a search is running, or stamped by a slightly skewed clock, is
+     * still picked up. Re-fetched models are skipped by {@link #syncedModels}.
+     */
+    static final long INCREMENTAL_OVERLAP_MS = 5 * 60 * 1000;
+
+    /**
+     * How often a full search runs instead of an incremental one. Full searches are what retry
+     * models skipped for missing artifacts (their creation time is behind the watermark), so the
+     * default matches {@link #MISSING_ARTIFACTS_BACKOFF_MS}.
+     */
+    @Value("${mlflow.sync.full-interval-ms:600000}")
+    private long fullSyncIntervalMs = MISSING_ARTIFACTS_BACKOFF_MS;
+
+    /** Newest logged-model creation time seen in a successful search; null until the first one. */
+    private volatile Long loggedModelsWatermarkMs;
+    private volatile long lastFullLoggedModelsSearchMs;
+    /** Cleared for good if the MLflow server rejects the {@code creation_time} filter. */
+    private volatile boolean incrementalSearchSupported = true;
+
+    /** Overridable in tests. */
+    LongSupplier clock = System::currentTimeMillis;
 
     @Value("${mlflow.sync.base-url:}")
     private String baseUrl;
@@ -82,17 +109,49 @@ public class MlflowSyncService {
     }
 
     private boolean syncFromLoggedModels() {
-        List<LoggedModel> loggedModels;
-        try {
-            loggedModels = mlflowClient.searchAllLoggedModels();
-        } catch (Exception e) {
-            log.warn("MLflow sync: failed to fetch logged models, will try classic registry", e);
-            return false;
+        long now = clock.getAsLong();
+        Long watermark = loggedModelsWatermarkMs;
+        boolean incremental = incrementalSearchSupported
+                && watermark != null
+                && now - lastFullLoggedModelsSearchMs < fullSyncIntervalMs;
+
+        List<LoggedModel> loggedModels = null;
+        if (incremental) {
+            try {
+                loggedModels = mlflowClient.searchAllLoggedModelsCreatedAfter(watermark - INCREMENTAL_OVERLAP_MS);
+            } catch (Exception e) {
+                incrementalSearchSupported = false;
+                incremental = false;
+                log.warn("MLflow sync: incremental logged-model search failed ({}); "
+                        + "using full searches from now on", e.getMessage());
+            }
+        }
+        if (!incremental) {
+            try {
+                loggedModels = mlflowClient.searchAllLoggedModels();
+            } catch (Exception e) {
+                log.warn("MLflow sync: failed to fetch logged models, will try classic registry", e);
+                return false;
+            }
+            lastFullLoggedModelsSearchMs = now;
         }
 
         if (loggedModels.isEmpty()) {
+            if (incremental) {
+                // Nothing new since the last search. The server does use logged models (the
+                // watermark only exists after a full search found some), so do not fall back.
+                log.debug("MLflow sync: no new logged models");
+                return true;
+            }
             log.debug("MLflow sync: no logged models found, will try classic registry");
             return false;
+        }
+
+        long newest = loggedModels.stream()
+                .mapToLong(lm -> lm.getInfo().getCreationTimestampMs())
+                .max().orElse(0L);
+        if (watermark == null || newest > watermark) {
+            loggedModelsWatermarkMs = newest;
         }
 
         // De-prioritise old runs: search backwards or shuffle? We'll just reverse it so the
@@ -132,7 +191,6 @@ public class MlflowSyncService {
             }
 
             // 3. Check negative cache (backoff on missing artifacts)
-            long now = System.currentTimeMillis();
             Long nextCheck = nextArtifactCheckTime.get(modelKey);
             if (nextCheck != null && now < nextCheck) {
                 skipped++;
@@ -170,7 +228,8 @@ public class MlflowSyncService {
             }
         }
 
-        log.info("MLflow sync (logged models): finished – {} created, {} already existed", created, skipped);
+        log.info("MLflow sync (logged models, {} search): finished – {} created, {} skipped",
+                incremental ? "incremental" : "full", created, skipped);
         return true;
     }
 
@@ -201,16 +260,39 @@ public class MlflowSyncService {
         for (ModelVersion mv : uniqueVersions.values()) {
             String name = mv.getName();
             String version = mv.getVersion();
+            // Prefixed so registry keys never collide with logged-model keys.
+            String modelKey = "registry:" + name + ":" + version;
 
-            AiModelSpecification existing =
-                    specificationRepository.findAiModelSpecificationByNameAndVersion(name, version);
-            if (existing != null) {
+            // 1. Positive cache: already synced, no DB lookup
+            if (syncedModels.contains(modelKey)) {
                 skipped++;
                 continue;
             }
 
+            // 2. DB
+            AiModelSpecification existing =
+                    specificationRepository.findAiModelSpecificationByNameAndVersion(name, version);
+            if (existing != null) {
+                syncedModels.add(modelKey);
+                skipped++;
+                continue;
+            }
+
+            // 3. Negative cache: back off on missing artifacts
+            long now = clock.getAsLong();
+            Long nextCheck = nextArtifactCheckTime.get(modelKey);
+            if (nextCheck != null && now < nextCheck) {
+                skipped++;
+                continue;
+            }
+
+            // 4. Artifact check
             if (!mlflowClient.hasArtifactsByUri("s3://mlflow/" + mv.getSource())) {
-                log.info("MLflow sync: skipped model {} v{} because no artifacts were found in backend/MinIO.", name, version);
+                if (nextCheck == null) {
+                    log.info("MLflow sync: skipped model {} v{} because no artifacts were found in backend/MinIO. "
+                            + "Backing off for 10 minutes.", name, version);
+                }
+                nextArtifactCheckTime.put(modelKey, now + MISSING_ARTIFACTS_BACKOFF_MS);
                 skipped++;
                 continue;
             }
@@ -220,6 +302,8 @@ public class MlflowSyncService {
                         specificationService.createSpecificationFromMlflow(name, version, baseUrl);
                 specificationRepository.createAiModelSpecification(specCreate);
                 log.info("MLflow sync: created AiModelSpecification for {} v{}", name, version);
+                syncedModels.add(modelKey);
+                nextArtifactCheckTime.remove(modelKey);
                 created++;
             } catch (Exception e) {
                 log.warn("MLflow sync: failed to create specification for {} v{}: {}",
@@ -227,7 +311,7 @@ public class MlflowSyncService {
             }
         }
 
-        log.info("MLflow sync (classic registry): finished – {} created, {} already existed", created, skipped);
+        log.info("MLflow sync (classic registry): finished – {} created, {} skipped", created, skipped);
         return true;
     }
 

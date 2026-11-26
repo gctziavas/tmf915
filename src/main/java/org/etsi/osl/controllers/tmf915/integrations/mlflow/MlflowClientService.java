@@ -69,15 +69,56 @@ public class MlflowClientService {
     /**
      * Searches for logged models across the given experiments.
      * Uses the {@code POST /api/2.0/mlflow/logged-models/search} endpoint.
+     * A failed request is logged and ends the search with the models collected so far.
      */
     public List<LoggedModel> searchLoggedModels(List<String> experimentIds) {
-        log.debug("Searching logged models for experiments: {}", experimentIds);
+        return searchLoggedModels(experimentIds, null, false);
+    }
+
+    /**
+     * Searches for logged models across all experiments.
+     */
+    public List<LoggedModel> searchAllLoggedModels() {
+        log.debug("Fetching all logged models across all experiments");
+        List<String> experimentIds = listExperimentIds();
+        if (experimentIds.isEmpty()) {
+            log.debug("No experiments found in MLflow");
+            return List.of();
+        }
+        return searchLoggedModels(experimentIds);
+    }
+
+    /**
+     * Searches all experiments for logged models created after {@code sinceMs} (epoch millis),
+     * using the server-side filter {@code creation_time > sinceMs}.
+     *
+     * <p>Unlike {@link #searchAllLoggedModels()}, a failed request (for example an MLflow server
+     * that does not support this filter) throws instead of returning a partial list, so the
+     * caller can fall back to a full search.
+     *
+     * @throws RestClientException if MLflow rejects the request or cannot be reached
+     */
+    public List<LoggedModel> searchAllLoggedModelsCreatedAfter(long sinceMs) {
+        log.debug("Fetching logged models created after {}", sinceMs);
+        List<String> experimentIds = listExperimentIds();
+        if (experimentIds.isEmpty()) {
+            log.debug("No experiments found in MLflow");
+            return List.of();
+        }
+        return searchLoggedModels(experimentIds, "creation_time > " + sinceMs, true);
+    }
+
+    private List<LoggedModel> searchLoggedModels(List<String> experimentIds, String filter, boolean failFast) {
+        log.debug("Searching logged models for experiments: {} (filter={})", experimentIds, filter);
         List<LoggedModel> allModels = new ArrayList<>();
         String pageToken = null;
 
         do {
             Map<String, Object> body = new java.util.LinkedHashMap<>();
             body.put("experiment_ids", experimentIds);
+            if (filter != null) {
+                body.put("filter", filter);
+            }
             if (pageToken != null) {
                 body.put("page_token", pageToken);
             }
@@ -109,6 +150,9 @@ public class MlflowClientService {
                     pageToken = null;
                 }
             } catch (RestClientException e) {
+                if (failFast) {
+                    throw e;
+                }
                 log.warn("Failed to search logged models: {}", e.getMessage());
                 pageToken = null;
             }
@@ -116,19 +160,6 @@ public class MlflowClientService {
 
         log.debug("Found {} logged models", allModels.size());
         return allModels;
-    }
-
-    /**
-     * Searches for logged models across all experiments.
-     */
-    public List<LoggedModel> searchAllLoggedModels() {
-        log.debug("Fetching all logged models across all experiments");
-        List<String> experimentIds = listExperimentIds();
-        if (experimentIds.isEmpty()) {
-            log.debug("No experiments found in MLflow");
-            return List.of();
-        }
-        return searchLoggedModels(experimentIds);
     }
 
     /**

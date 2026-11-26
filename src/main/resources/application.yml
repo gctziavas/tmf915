@@ -112,6 +112,9 @@ mlflow: # MLflow configuration for AIM915 model management
   sync: # Periodic sync of MLflow models to TMF 915 AiModelSpecifications
     enabled: true
     interval-ms: 60000 # 1 minute
+    # Every full-interval-ms all logged models are fetched; in between, only models created since
+    # the last search (if the MLflow server supports the creation_time filter).
+    full-interval-ms: 600000 # 10 minutes
     base-url: "" # Base URL for artifact endpoints (empty = auto from server config)
   docker: # Docker deployment configuration
     # Docker daemon host URI (e.g., tcp://10.0.0.1:2375). Empty = local Docker.
@@ -125,6 +128,16 @@ mlflow: # MLflow configuration for AIM915 model management
     env-manager: "local"
     # Timeout in seconds for docker run command
     command-timeout-seconds: 30
+
+hub: # TMF Hub event notifications (webhooks to subscribers)
+  webhook:
+    # Off by default: no notifications are sent. Subscriptions can still be registered through
+    # the hub API (a warning is logged). Set to true to deliver events to subscribers.
+    enabled: false
+    connect-timeout: 2s # max time to open a connection to a subscriber
+    read-timeout: 5s    # max time to wait for a subscriber's response
+    threads: 4          # deliveries to different subscribers run in parallel
+    queue-capacity: 1000 # pending deliveries; beyond this, notifications are dropped with a warning
 
 aimodel: # AIM915 model management configuration
   deployment:

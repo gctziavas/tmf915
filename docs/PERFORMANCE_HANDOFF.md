@@ -44,7 +44,7 @@ Not verified: the running application was never called. That the HTTP layer uses
 
 - **Part 1: done** (2026-11-26, uncommitted). See "Part 1 outcome" at the end of Part 1.
 - **Part 2: done** (2026-11-26, uncommitted). Item 5 was only partly done (not profiled). See "Part 2 outcome" at the end of Part 2.
-- **Part 3: not started.**
+- **Part 3: done** (2026-11-26, uncommitted). See "Part 3 outcome" at the end of Part 3.
 
 ## Part 1: fix the AiModel list (requested)
 
@@ -185,13 +185,42 @@ Consequences:
 4. **Webhook delivery.** `integrations/hub/WebhookDispatcher.java` builds a `RestClient` with no connect or read timeout (its `timeout()` method is never used) and delivers to subscribers one after another. Add timeouts and deliver in parallel so one slow subscriber does not delay the rest.
 5. **Async executor.** `@EnableAsync` is on with no explicit executor configuration. Define a bounded executor for webhook delivery.
 
+### Part 3 outcome
+
+| Item | Status | Change | Verified by |
+|---|---|---|---|
+| 3.1 MCP lookups | Done | `getAiModel` uses `findAiModelById`, and `getAiModelSpecification` uses `findAiModelSpecificationById`: one row each, instead of loading every model or paging through every specification. The summary mapping is shared by the list and get tools. | New `mcp/AiCatalogMcpToolsUnitTest`: looks up by id, never lists, null for unknown or blank ids |
+| 3.2 Classic-registry sync caches | Done | `syncFromClassicRegistry` uses the same synced-model set and missing-artifacts back-off (10 minutes) as the logged-model path, keyed `registry:<name>:<version>`. A version already synced costs no database lookup or artifact check; one without artifacts is rechecked at most every 10 minutes. The database is still checked before the back-off, as on the logged-model path. | `MlflowSyncServiceUnitTest` |
+| 3.3 Incremental MLflow fetch | Done | Between full searches, `syncFromLoggedModels` calls the new `MlflowClientService.searchAllLoggedModelsCreatedAfter(since)`, which sends `filter: "creation_time > <ms>"`, with `since` = newest creation time seen minus 5 minutes of overlap. A full search runs on the first tick and every `mlflow.sync.full-interval-ms` (new, default 600000). Full searches are what retry models skipped for missing artifacts, because those are behind the watermark. If the server rejects the filter, the tick falls back to a full search and incremental searches are switched off until restart, with one warning. An empty incremental result no longer triggers the classic-registry fallback. The classic registry is still fetched in full each time it is used: its model-version search cannot filter by time. | `MlflowSyncServiceUnitTest`: full → incremental → full, watermark advance, filter rejected, no duplicate creates in the overlap window |
+
+Notes:
+
+- Filter syntax: the MLflow docs show `creation_time > <epoch ms>` as a logged-model search filter ([Search Logged Models](https://mlflow.org/docs/latest/ml/search/search-models/)). It was **not** tested against the project's MLflow server, whose version is unknown. If that server does not support it, the fallback keeps the sync working and the log shows `incremental logged-model search failed`. To confirm in production, look for `MLflow sync (logged models, incremental search)` in the logs.
+- `MlflowSyncService` has a package-private `clock` (a `LongSupplier`) so the tests can control time.
+- After a clean build, a stale `AiCatalogMcpTools` class compiled by the IDE caused "cannot find symbol" errors on record accessors. `mvn clean` fixed it, as with the earlier "Extra bytes" error.
+| 3.4 Webhook delivery | Done | `WebhookDispatcher` no longer uses `@Async`. `onDomainEvent` hands the event to the dispatcher's own pool and returns immediately. The dispatch task loads subscriptions, serialises the payload once per event (only if a subscriber matches), and submits one delivery task per subscriber, so a slow subscriber does not delay the others. `RestClient` uses `JdkClientHttpRequestFactory` with connect and read timeouts. The unused `timeout()` method was removed. **Bug fixed along the way:** the injected application `ObjectMapper` (Jackson 2, `JsonNullableModule` only) cannot serialise `OffsetDateTime`. Every notification for a model with `startDate`/`endDate` (all RESERVED/deploy events, since the lifecycle fills in default dates) failed and only logged a warning. The dispatcher now uses a copy of that mapper with `JavaTimeModule` and ISO-8601 dates; the shared bean is unchanged. | New `integrations/hub/WebhookDispatcherTest`, against real local HTTP endpoints (JDK `HttpServer`): publishing returns at once; a fast subscriber is not held up by a hanging one; the hanging delivery is abandoned at the read timeout; one serialisation for 3 subscribers; a model with dates is delivered with ISO dates; a full queue drops notifications without blocking or throwing; an event published just before shutdown is still delivered |
+| 3.5 Bounded executor | Done | The dispatcher owns a `ThreadPoolExecutor`: 4 daemon threads (`webhook-N`) and a bounded `ArrayBlockingQueue` (1000). When the queue is full, the notification is dropped with a warning instead of blocking the publisher (usually an HTTP request thread) or growing without limit. During shutdown, rejected tasks run on the submitting thread so queued notifications are not lost; `@PreDestroy` waits up to 10 seconds. It is deliberately **not** a Spring `TaskExecutor` bean: declaring one makes Spring Boot's auto-configured `applicationTaskExecutor` back off, and that executor also serves Spring MVC async requests and probably the MCP server. Nothing in the code uses `@Async` any more; `@EnableAsync` was left in place and is harmless. | Same tests |
+
+**Webhooks are off by default** (owner's decision, 2026-11-26: no client uses them yet). `WebhookDispatcher` is `@ConditionalOnProperty(hub.webhook.enabled=true)`, so when the property is off there is no thread pool and no per-event subscription lookup, and the domain events have no listener. The hub endpoints still accept registrations (the API stays TMF-compliant); `EventsSubscriptionApiDelegateImpl` logs a warning that the listener will not receive events. Covered by `WebhookEnablementTest` (an `ApplicationContextRunner` needs Boot's `ApplicationConversionService` for the `Duration` properties).
+
+Configuration (new, in `application.yml`): `hub.webhook.enabled` (false), `hub.webhook.connect-timeout` (2s), `hub.webhook.read-timeout` (5s), `hub.webhook.threads` (4), `hub.webhook.queue-capacity` (1000).
+
+Further notes:
+
+- Each dropped notification logs one warning. Under sustained overload this is noisy; a rate-limited counter would be the next step if that happens.
+- Notifications are still fire-and-forget: no retries. A subscriber that is down misses events.
+- The IDE compiling into `target/` corrupted class files once more ("cannot access …", "X cannot be converted to X"). Running `mvn clean test` again fixed it.
+- `mvn test`: 224 tests, all passing.
+- The VS Code Java extension compiles into `target/` and repeatedly left broken or stale classes there ("Unresolved compilation problems" comes from its Eclipse compiler). Run `mvn clean test`, or turn off the extension's auto-build while running Maven.
+
 ## Related bugs, not performance
 
 Report these to the owner; fix only if asked.
 
-- The uncommitted `ObjectMapper` bean in `OpenApiGeneratorApplication.java` is a Jackson 2 mapper with only `JsonNullableModule` registered. `WebhookDispatcher` injects it. Without `JavaTimeModule`, serializing an `AiModel` whose `startDate` or `endDate` is set should fail, and the dispatcher only logs a warning. The webhook also serializes on an async thread, where an uninitialized lazy specification cannot be loaded.
+- ~~Webhook payloads for models with dates failed to serialise.~~ Fixed in 3.4. The lazy-specification concern was resolved in Part 2: `normalize` loads what the JSON needs, and the `aiModelSpecification` reference is built from stored columns.
+- With `mlflow.enabled=false` the application does not start (`MlflowSpecificationService` is unconditional but needs `MlflowClientService`). See the Part 1 findings.
 - The JSON converters in `mappers/converters` catch parse errors and return `[]` or `null`, so a corrupt column reads as empty data and can then be saved back as empty.
-- The specification list offset arithmetic described in 1.4.
+- ~~The specification list offset arithmetic described in 1.4.~~ Fixed in 1.4.
 
 ## What to report back
 
