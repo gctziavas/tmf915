@@ -39,6 +39,8 @@ export KEYCLOAK_ISSUER_URI=http://my-server.example.com:8080/auth/realms/opensli
 
 If the two don't match, every API call returns `401`.
 
+Swagger UI signs in through `localhost:8080` too. For Swagger from another machine, also set `SPRINGDOC_OAUTHFLOW_AUTHORIZATIONURL` and `SPRINGDOC_OAUTHFLOW_TOKENURL` on the `tmf915` service, for example `http://my-server.example.com:8080/auth/realms/openslice/protocol/openid-connect/auth` and `…/token`.
+
 ### 1.2 Start
 
 **Everything local** (MySQL, Keycloak, MinIO, MLflow, API):
@@ -46,6 +48,8 @@ If the two don't match, every API call returns `401`.
 ```bash
 docker compose --profile full up -d --build
 ```
+
+MinIO no longer publishes container images, so the `full` profile uses unmodified mirrors of the last official builds (`gtziavas/minio-mirror`, `gtziavas/mc-mirror`). They exist for linux/amd64 only; on ARM machines (Apple Silicon, ARM servers) Docker has to emulate them, which is slower, or point `MLFLOW_S3_ENDPOINT_URL` at an S3 store of your own.
 
 The one-shot `minio-init` service creates the `mlflow` bucket that MLflow stores artifacts in (`s3://mlflow/`), then exits; `mlflow` starts after it. The MinIO console is at http://localhost:9011 (`minioadmin` / `minioadmin`).
 
@@ -59,7 +63,7 @@ docker compose up -d --build
 
 If you don't set them, the API looks for the `full` profile's services (`http://mlflow:5000`, `http://minio:9000`). To run without MLflow at all, set `MLFLOW_ENABLED=false` in `docker-compose.yml`: the catalog and models can then be managed, but nothing is synced or deployed.
 
-Keycloak needs a minute on first start. The API waits for it and for MySQL.
+The first start takes several minutes: MySQL initialises its data, and Keycloak creates its database schema before it answers on port 8080. The API waits for MySQL; requests that need a token fail until Keycloak is up. Later starts are quick.
 
 ### 1.3 Check it works
 

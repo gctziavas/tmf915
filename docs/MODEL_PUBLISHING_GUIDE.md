@@ -73,6 +73,7 @@ with mlflow.start_run():
         params={**hp, "config.version": "RandomForest + MinMaxScaler, 80/20 split"},  # description
         signature=infer_signature(X_test, predictions),   # → inferencePayloadExample
         input_example=X_test.head(2),
+        skops_trusted_types=["sklearn.tree._tree.Tree"],   # see the note below
     )
 
     # Metrics linked to the logged model appear in the catalog
@@ -86,6 +87,7 @@ Notes on the example:
 
 - **`params`:** the values passed to `log_model(params=...)` are stored on the logged model, which is where the API reads them. Parameters logged only to the run with `mlflow.log_param` may not reach the catalog.
 - **Pandas input:** training on a DataFrame gives the signature real column names, so the example request body uses them.
+- **`skops_trusted_types`:** recent MLflow 3 releases (3.18 when this was checked) save scikit-learn models in the `skops` format and refuse to log a model containing types not explicitly trusted. Tree-based models (decision trees, random forests, gradient boosting) need `sklearn.tree._tree.Tree`. If `log_model` fails with "references untrusted types", trust exactly the types the message lists. If your MLflow version does not know this argument, remove it.
 
 ## 3. What ends up in the catalog
 

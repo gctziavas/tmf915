@@ -625,7 +625,7 @@ Done one item at a time, with the tree building after each; the per-item details
 | 4.5 | Specifications created from MLflow get `lifecycleStatus` from `aimodel.specification.default-lifecycle-status` (default `Active`), on both the logged-model and the classic-registry path. | `MlflowSpecificationServiceUnitTest`. |
 | 4.6 (D4) | `aimodel.deployment.serving-base-url` is implemented in `MlflowDeploymentService.endpointFor`: for containers on the default Docker host, the endpoint is the base plus `:<port>`, or a template with `{port}` replaced. Another `dockerHost` keeps its own address. An invalid value (no http(s) scheme or host; a port or path without `{port}`) stops startup. | `MlflowDeploymentServiceUnitTest` (base, template, other host, unset, invalid values). |
 | 4.2, 5.11 rest | `docker-compose.yml`: the issuer variables default to `http://localhost:8080/auth/realms/openslice` (override with `KEYCLOAK_ISSUER_URI`); MLflow and MinIO default to the `full` profile's `http://mlflow:5000` and `http://minio:9000`. The `docker` profile in `application.yml` uses the same names. `application-integration.yml` reads `TMF915_IT_MLFLOW_URI`, `TMF915_IT_S3_URL` and `TMF915_IT_DOCKER_HOST`. The lab address `172.16.100.94` is gone from code, config and guides. | `docker compose config` shows the new defaults; full test suite. |
-| 4.7 | A one-shot `minio-init` service (`minio/mc`, `full` profile) creates the `mlflow` bucket; `mlflow` waits for it to complete. | `docker compose config` only. A live check was interrupted, so the first run of the acceptance test below is its real test. |
+| 4.7 | A one-shot `minio-init` service (`minio/mc`, `full` profile) creates the `mlflow` bucket; `mlflow` waits for it to complete. | Live, in the acceptance run below: "Bucket created successfully `local/mlflow`", and `mlflow` started after it. |
 
 **Found and fixed along the way:** the application's explicit `@ComponentScan` has no `TypeExcludeFilter`, so a nested `@TestConfiguration` leaked its beans into every test context. The fake deployer in `DeploymentSchedulerSpringTest` is now a plain class added with `@Import`. Keep test-only beans out of `@TestConfiguration`, or add the Boot exclude filters to that `@ComponentScan`.
 
@@ -635,9 +635,34 @@ Done one item at a time, with the tree building after each; the per-item details
 - **Endpoints:** models deployed before `serving-base-url` is set keep their old `endpoint` until redeployed.
 - **Docker Compose:** the quick start needs no exports. An external MLflow needs `MLFLOW_TRACKING_URI` and `MLFLOW_S3_ENDPOINT_URL`, as before, and other client addresses need `KEYCLOAK_ISSUER_URI`.
 
-**Not covered:** Swagger UI's OAuth URLs (`springdoc.oAuthFlow.*`) still point at `localhost:8080`, so signing in through Swagger from another machine needs `SPRINGDOC_OAUTHFLOW_AUTHORIZATIONURL` and `SPRINGDOC_OAUTHFLOW_TOKENURL`.
+**Swagger from another machine:** Swagger UI's OAuth URLs (`springdoc.oAuthFlow.*`) point at `localhost:8080`. Setting `SPRINGDOC_OAUTHFLOW_AUTHORIZATIONURL` and `SPRINGDOC_OAUTHFLOW_TOKENURL` on the `tmf915` service replaces them; verified in the served `/v3/api-docs`. `USER_GUIDE.md` 1.1 documents it.
 
-**Still to do: the plan's acceptance run on a clean VM.** `git clone` → `docker compose --profile full up -d --build` → get a token → `GET /aiModel` returns `200`, and a logged sample model appears in the catalog within a minute. It also verifies `minio-init`.
+**Acceptance run** (2026-11-26, on the owner's machine, not a clean VM). A copy of the working tree was run as a separate Compose project (`tmf915verify`) with host ports moved to 2xxxx, then removed with its volumes and built image.
+
+- **Build and start:** `docker compose --profile full up -d --build`.
+- **Token:** issuer equal to the configured `KEYCLOAK_ISSUER_URI`.
+- **`GET /aiModel`:** `200`.
+- **Catalog:** the `MODEL_PUBLISHING_GUIDE.md` example, run against the stack, was published 10 s after logging, with `name`, `version`, the `config.version` description and `lifecycleStatus: Active`.
+
+It found **three bugs that would have broken the quick start**, all fixed:
+
+1. **MySQL marked unhealthy on first start.** The data-directory initialisation outlasted the healthcheck (10 × 10 s, no grace period), so `compose up` failed with "dependency failed to start: mysql is unhealthy", and Keycloak and the API never started. A second `up` on the same machine works, which is how it went unnoticed. **Fix:** `start_period: 180s` on the MySQL healthcheck. Verified with a fresh run from empty volumes.
+2. **MLflow 3 rejected the API.** The `mlflow` image is unpinned (3.18 at the time), and MLflow 3 rejects Host headers outside "localhost + private IPs" with 403 "Invalid Host header - possible DNS rebinding attack detected". The API calls it as `mlflow:5000`, so the catalog sync failed every minute. **Fix:** `--allowed-hosts "mlflow,mlflow:*,localhost,localhost:*,127.0.0.1,127.0.0.1:*"`. Verified: `mlflow:5000`, `localhost` and `127.0.0.1` get 200, and a foreign Host header still gets 403.
+3. **The publishing guide's example failed on MLflow 3.18.** `mlflow.sklearn.log_model` saves with `skops` and refuses untrusted types; a random forest needs `sklearn.tree._tree.Tree`. **Fix:** the example passes `skops_trusted_types=["sklearn.tree._tree.Tree"]`, with a note in `MODEL_PUBLISHING_GUIDE.md`. Verified: the corrected example logs and syncs.
+
+**Image pinning (done, owner's request: external images only, not the ones we build).** `docker-compose.yml` pins every external image to the version the acceptance run used: `mysql:8.0.46`, `quay.io/keycloak/keycloak:26.0.8`, `ghcr.io/mlflow/mlflow:v3.18.0`. Each tag was checked to exist in its registry. The Dockerfile (`maven`, `eclipse-temurin`, the `pip install mlflow boto3` in the API image) is unchanged, as requested. It still floats, and the API's `mlflow` client should be kept compatible with the pinned server.
+
+**MinIO images are gone.** `minio/minio` and `minio/mc` can no longer be pulled: Docker Hub answers "repository does not exist" (repository page 404) for every reference, including `latest` and the cached digests; `quay.io/minio/*` answers 401. The acceptance run worked only because both were cached on the owner's machine, so on any other machine the `full` profile failed at the pull. **Fix:** the cached images (MinIO `RELEASE.2025-09-07T16-13-09Z`, commit `07c3a429bfed433e49018cb0f78a52145d4bedeb`; mc `RELEASE.2025-08-13T08-35-41Z`, commit `7394ce0dd2a80935aded936b09fa12cbb3cb8096`) were pushed unmodified, with the owner's approval, to `gtziavas/minio-mirror` and `gtziavas/mc-mirror`. Both are public and anonymously pullable (manifest 200 without login).
+
+Limits of the mirror:
+
+- **amd64 only:** the cached copies are single-platform; ARM hosts emulate or fail. Noted in `USER_GUIDE.md` 1.2.
+- **AGPL-3.0:** state the upstream repositories and commits in the Docker Hub descriptions (also in the `docker-compose.yml` comments).
+- **Frozen:** no upstream security fixes.
+
+Longer term, replace it with a maintained S3 server. RustFS (`rustfs/rustfs:1.0.7`, Apache-2.0) and SeaweedFS (`chrislusf/seaweedfs`) were both checked as pullable, with `amazon/aws-cli:2.42.4` for bucket creation. No code change is needed: the API and MLflow use the plain S3 API.
+
+**Observed, not a project bug:** Keycloak's first start took 1,514 s and MySQL's initialisation about 2 minutes. Docker's data lives on a 7200 rpm hard disk on that machine (130 ms per synced write, measured). On an SSD both take a fraction of that. `USER_GUIDE.md` now says the first start takes several minutes.
 
 `mvn clean test`: 305 tests, all passing.
 

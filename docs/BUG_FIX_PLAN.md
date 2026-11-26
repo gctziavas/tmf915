@@ -71,7 +71,7 @@ Client-visible: webhook subscribers start receiving `active`, `designed` and `te
 
 ## Milestone C: works on a fresh machine
 
-### PR 5: first-run experience (4.2, 4.7, 5.8, 5.11 rest, 4.6 per D4, 4.5) — done, uncommitted (acceptance run on a clean VM still open)
+### PR 5: first-run experience (4.2, 4.7, 5.8, 5.11 rest, 4.6 per D4, 4.5) — done, uncommitted (acceptance run done on the owner's machine; it found and fixed three quick-start bugs, see the handoff)
 
 Done one item at a time; each ticked item is complete (code, tests, docs), and the tree builds after each.
 

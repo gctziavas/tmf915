@@ -2,7 +2,7 @@ services:
 
   # ── MySQL ──────────────────────────────────────────────────────────
   mysql:
-    image: mysql:8.0
+    image: mysql:8.0.46
     restart: unless-stopped
     environment:
       MYSQL_ROOT_PASSWORD: letmein
@@ -16,10 +16,14 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
+      # First start initialises the data directory, which can take a few minutes on a fresh
+      # machine. Failures during start_period do not count, so MySQL is not marked unhealthy
+      # (which would stop Keycloak and the API from ever starting) before it is ready.
+      start_period: 180s
 
   # ── Keycloak ───────────────────────────────────────────────────────
   keycloak:
-    image: quay.io/keycloak/keycloak:26.0
+    image: quay.io/keycloak/keycloak:26.0.8
     restart: unless-stopped
     command:
       - start-dev
@@ -96,7 +100,10 @@ services:
 
   # ── MinIO (Optional - 'full' profile) ─────────────────────────────
   minio:
-    image: minio/minio
+    # MinIO no longer publishes images on Docker Hub or quay.io. These are unmodified mirrors of
+    # the last official builds (linux/amd64 only), from source github.com/minio/minio at commit
+    # 07c3a429bfed433e49018cb0f78a52145d4bedeb (AGPL-3.0).
+    image: gtziavas/minio-mirror:RELEASE.2025-09-07T16-13-09Z
     profiles: ["full"]
     restart: unless-stopped
     ports:
@@ -113,7 +120,9 @@ services:
   # One-shot: waits for MinIO, creates the 'mlflow' bucket the mlflow service stores artifacts
   # in (s3://mlflow/), then exits. Safe to re-run.
   minio-init:
-    image: minio/mc
+    # Mirror of minio/mc, source github.com/minio/mc at commit 7394ce0dd2a80935aded936b09fa12cbb3cb8096
+    # (AGPL-3.0). See the note on the minio service.
+    image: gtziavas/mc-mirror:RELEASE.2025-08-13T08-35-41Z
     profiles: ["full"]
     depends_on:
       - minio
@@ -129,7 +138,7 @@ services:
 
   # ── MLflow (Optional - 'full' profile) ────────────────────────────
   mlflow:
-    image: ghcr.io/mlflow/mlflow
+    image: ghcr.io/mlflow/mlflow:v3.18.0
     profiles: ["full"]
     restart: unless-stopped
     ports:
@@ -138,7 +147,12 @@ services:
       AWS_ACCESS_KEY_ID: minioadmin
       AWS_SECRET_ACCESS_KEY: minioadmin
       MLFLOW_S3_ENDPOINT_URL: http://minio:9000
-    command: mlflow server --backend-store-uri sqlite:///mlflow.db --default-artifact-root s3://mlflow/ --host 0.0.0.0
+    # --allowed-hosts: MLflow 3 rejects requests whose Host header is not allowed (DNS-rebinding
+    # protection; the default only allows localhost and private IPs). The API reaches it as
+    # "mlflow:5000"; training scripts and browsers on the host use localhost.
+    command: >-
+      mlflow server --backend-store-uri sqlite:///mlflow.db --default-artifact-root s3://mlflow/ --host 0.0.0.0
+      --allowed-hosts "mlflow,mlflow:*,localhost,localhost:*,127.0.0.1,127.0.0.1:*"
     depends_on:
       minio-init:
         condition: service_completed_successfully
