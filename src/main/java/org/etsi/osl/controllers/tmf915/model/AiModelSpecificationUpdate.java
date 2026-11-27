@@ -14,6 +14,12 @@ import java.util.Objects;
 
 /**
  * AiModelSpecification is a class that offers characteristics to describe a type of service. Functionally, it acts as a template by which Services may be instantiated. By sharing the same  specification, these services would therefore share the same set of characteristics. Skipped properties: id,href,lastUpdate
+ *
+ * <p><b>PATCH semantics:</b> list fields have no default ({@code null}, not an empty list), so a
+ * list the client leaves out stays {@code null} and the stored list is kept. An empty list
+ * clears it. The generator's {@code = new ArrayList<>()} default made every PATCH erase the
+ * lists it did not send; keep it out if this class is regenerated
+ * (test: {@code AiModelListHttpTest.patch*_keepsListsTheClientDidNotSend}).
  */
 
 @Schema(name = "AiModelSpecification_Update", description = "AiModelSpecification is a class that offers characteristics to describe a type of service. Functionally, it acts as a template by which Services may be instantiated. By sharing the same  specification, these services would therefore share the same set of characteristics. Skipped properties: id,href,lastUpdate")
@@ -46,31 +52,31 @@ public class AiModelSpecificationUpdate {
   private @Nullable String version;
 
   @Valid
-  private List<@Valid AttachmentRefOrValue> attachment = new ArrayList<>();
+  private List<@Valid AttachmentRefOrValue> attachment;
 
   @Valid
-  private List<@Valid ConstraintRef> constraint = new ArrayList<>();
+  private List<@Valid ConstraintRef> constraint;
 
   @Valid
-  private List<@Valid EntitySpecificationRelationship> entitySpecRelationship = new ArrayList<>();
+  private List<@Valid EntitySpecificationRelationship> entitySpecRelationship;
 
   @Valid
-  private List<@Valid FeatureSpecification> featureSpecification = new ArrayList<>();
+  private List<@Valid FeatureSpecification> featureSpecification;
 
   @Valid
-  private List<@Valid RelatedParty> relatedParty = new ArrayList<>();
+  private List<@Valid RelatedParty> relatedParty;
 
   @Valid
-  private List<@Valid ResourceSpecificationRef> resourceSpecification = new ArrayList<>();
+  private List<@Valid ResourceSpecificationRef> resourceSpecification;
 
   @Valid
-  private List<@Valid ServiceLevelSpecificationRef> serviceLevelSpecification = new ArrayList<>();
+  private List<@Valid ServiceLevelSpecificationRef> serviceLevelSpecification;
 
   @Valid
-  private List<@Valid ServiceSpecRelationship> serviceSpecRelationship = new ArrayList<>();
+  private List<@Valid ServiceSpecRelationship> serviceSpecRelationship;
 
   @Valid
-  private List<@Valid CharacteristicSpecification> specCharacteristic = new ArrayList<>();
+  private List<@Valid CharacteristicSpecification> specCharacteristic;
 
   private @Nullable TargetEntitySchema targetEntitySchema;
 

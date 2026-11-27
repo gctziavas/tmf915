@@ -34,6 +34,7 @@
         "http://localhost"
       ],
       "defaultClientScopes": [
+        "basic",
         "web-origins",
         "roles",
         "profile",

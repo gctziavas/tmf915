@@ -10,6 +10,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.convert.converter.Converter;
+import org.springframework.security.authentication.AbstractAuthenticationToken;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
@@ -23,12 +24,15 @@ import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtTimestampValidator;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.security.web.SecurityFilterChain;
 
 @Configuration
 @EnableWebSecurity
 @EnableMethodSecurity
 public class SecurityConfiguration {
+
+    private static final String PREFERRED_USERNAME = "preferred_username";
 
     @Value("${spring.security.oauth2.resourceserver.jwt.jwk-set-uri}")
     private String jwkSetUri;
@@ -70,10 +74,23 @@ public class SecurityConfiguration {
         return http.build();
     }
 
-    private JwtAuthenticationConverter jwtAuthenticationConverter() {
+    /**
+     * Roles from {@code realm_access.roles}; the name ({@code Authentication.getName()}, which the
+     * download audit log records) from {@code sub}, or from {@code preferred_username} when the
+     * token has no {@code sub}. Keycloak 25 and later add {@code sub} through the {@code basic}
+     * client scope, which realms imported from older exports lack.
+     */
+    static Converter<Jwt, AbstractAuthenticationToken> jwtAuthenticationConverter() {
         JwtAuthenticationConverter converter = new JwtAuthenticationConverter();
         converter.setJwtGrantedAuthoritiesConverter(new KeycloakRealmRoleConverter());
-        return converter;
+        return jwt -> {
+            AbstractAuthenticationToken authentication = converter.convert(jwt);
+            String username = jwt.getClaimAsString(PREFERRED_USERNAME);
+            if (jwt.getSubject() != null || username == null) {
+                return authentication;
+            }
+            return new JwtAuthenticationToken(jwt, authentication.getAuthorities(), username);
+        };
     }
 
     /**

@@ -1,5 +1,6 @@
 package org.etsi.osl.controllers.tmf915.integrations.mlflow;
 
+import org.etsi.osl.controllers.tmf915.artifacts.ArtifactCharacteristics;
 import org.etsi.osl.controllers.tmf915.model.AiModelSpecificationCreate;
 import org.etsi.osl.controllers.tmf915.model.CharacteristicSpecification;
 import org.etsi.osl.controllers.tmf915.model.CharacteristicValueSpecification;
@@ -38,6 +39,9 @@ import java.util.Optional;
 public class MlflowSpecificationService {
 
     private static final Logger log = LoggerFactory.getLogger(MlflowSpecificationService.class);
+
+    /** MLflow tag a publisher sets to {@code false} to keep a model from being downloaded. */
+    static final String DOWNLOADABLE_TAG = "downloadable";
 
     private final MlflowClientService mlflowClient;
 
@@ -128,6 +132,7 @@ public class MlflowSpecificationService {
         addLoggedModelParamCharacteristics(spec, loggedModel);
         addLoggedModelMetricCharacteristics(spec, loggedModel);
         addLoggedModelTagCharacteristics(spec, info);
+        addDownloadableCharacteristic(spec, loggedModelTag(info, DOWNLOADABLE_TAG));
 
         // Artifact URLs
         if (info.getArtifactUri() != null) {
@@ -211,6 +216,45 @@ public class MlflowSpecificationService {
                 "tags", "MLflow model tags", String.join(", ", tagStrings)));
     }
 
+    // ── Model downloads ─────────────────────────────────────────────────
+    // platform, artifactFormat and the download attachment are added by the catalog sync
+    // (catalog.CatalogSyncService) for every platform; only the MLflow tag is read here.
+
+    /** The publisher's {@code downloadable} tag, if set, as the {@code downloadable} characteristic. */
+    private void addDownloadableCharacteristic(AiModelSpecificationCreate spec, String downloadableTag) {
+        if (downloadableTag != null && !downloadableTag.isBlank()) {
+            spec.addSpecCharacteristicItem(createCharacteristicSpec(ArtifactCharacteristics.DOWNLOADABLE,
+                    "false: the publisher does not allow downloading the model files", downloadableTag.trim()));
+        }
+    }
+
+    private static String loggedModelTag(LoggedModel.LoggedModelInfo info, String key) {
+        if (info.getTags() == null) {
+            return null;
+        }
+        for (LoggedModel.Tag tag : info.getTags()) {
+            if (key.equals(tag.getKey())) {
+                return tag.getValue();
+            }
+        }
+        return null;
+    }
+
+    /** The model version's tag, else the registered model's. */
+    private static String registryTag(ModelVersion modelVersion, RegisteredModel registeredModel, String key) {
+        for (ModelVersionTag tag : modelVersion.getTagsList()) {
+            if (key.equals(tag.getKey())) {
+                return tag.getValue();
+            }
+        }
+        for (RegisteredModelTag tag : registeredModel.getTagsList()) {
+            if (key.equals(tag.getKey())) {
+                return tag.getValue();
+            }
+        }
+        return null;
+    }
+
     private String buildLoggedModelUrl(String experimentId, String modelId) {
         if (mlflowTrackingUri == null || mlflowTrackingUri.isEmpty()) {
             return "mlflow://experiments/" + experimentId + "/models/" + modelId;
@@ -268,6 +312,7 @@ public class MlflowSpecificationService {
         addFrameworkCharacteristics(spec, modelVersion, run);
         addMetricsCharacteristics(spec, run);
         addTagsCharacteristics(spec, modelVersion, registeredModel);
+        addDownloadableCharacteristic(spec, registryTag(modelVersion, registeredModel, DOWNLOADABLE_TAG));
         // Set artifact URLs (TMF 915 standard fields)
         setArtifactUrls(spec, modelVersion, run, baseUrl, modelId);
 

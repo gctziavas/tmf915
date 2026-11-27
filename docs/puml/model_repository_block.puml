@@ -18,7 +18,7 @@ package "Model Repository Architecture (Model Management Block)" {
 
     package "Vendor-Agnostic Abstraction Layer (TMF 915)" {
         [TMF 915 API Layer] as TMF915
-        [MlflowSyncService\n(Dual Caching Strategy)] as SyncService
+        [CatalogSyncService + MlflowCatalogSource\n(Dual Caching Strategy)] as SyncService
         database "Model Catalog\n(AiModelSpecification entities)" as Catalog
         
         SyncService -down-> Catalog : Translates & Populates\nCatalog Blueprints

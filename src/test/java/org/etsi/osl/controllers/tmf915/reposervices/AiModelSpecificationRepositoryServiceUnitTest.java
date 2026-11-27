@@ -199,4 +199,132 @@ class AiModelSpecificationRepositoryServiceUnitTest {
         assertThrows(IllegalArgumentException.class,
                 () -> service.deleteAiModelSpecification("none"));
     }
+
+    // ── Download attachment (model downloads) ────────────────────────────
+
+    private static final org.etsi.osl.controllers.tmf915.artifacts.ModelArtifact ARTIFACT =
+            new org.etsi.osl.controllers.tmf915.artifacts.ModelArtifact(java.net.URI.create("s3://mlflow/x"),
+                    "mlflow-model", List.of(new org.etsi.osl.controllers.tmf915.artifacts.ArtifactFile("MLmodel", 10)), 10);
+
+    private static org.etsi.osl.controllers.tmf915.model.AttachmentRefOrValue download() {
+        return org.etsi.osl.controllers.tmf915.artifacts.DownloadAttachments.create("iris", "1", ARTIFACT);
+    }
+
+    private static org.etsi.osl.controllers.tmf915.model.AttachmentRefOrValue datasheet() {
+        org.etsi.osl.controllers.tmf915.model.AttachmentRefOrValue a = new org.etsi.osl.controllers.tmf915.model.AttachmentRefOrValue();
+        a.setName("datasheet.pdf");
+        return a;
+    }
+
+    private static org.etsi.osl.controllers.tmf915.model.CharacteristicSpecification downloadable(String value) {
+        org.etsi.osl.controllers.tmf915.model.CharacteristicSpecification c = new org.etsi.osl.controllers.tmf915.model.CharacteristicSpecification();
+        c.setName("downloadable");
+        org.etsi.osl.controllers.tmf915.model.CharacteristicValueSpecification v = new org.etsi.osl.controllers.tmf915.model.CharacteristicValueSpecification();
+        v.setValue(value);
+        c.addCharacteristicValueSpecificationItem(v);
+        return c;
+    }
+
+    @Test
+    void create_pointsTheDownloadAttachmentAtTheNewId() {
+        AiModelSpecificationCreate create = new AiModelSpecificationCreate();
+        create.setName("iris");
+        create.addAttachmentItem(download());
+        when(aiModelSpecificationRepository.save(any(AiModelSpecification.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        AiModelSpecification created = service.createAiModelSpecification(create);
+
+        assertEquals(java.net.URI.create("/tmf-api/AiM/v4/aiModelSpecification/" + created.getId() + "/artifacts?format=mlflow-model"),
+                created.getAttachment().get(0).getHref());
+    }
+
+    @Test
+    void patch_keepsTheDownloadAttachment_andIgnoresClientCopies() {
+        AiModelSpecification stored = new AiModelSpecification();
+        stored.setId("spec-1");
+        stored.setAttachment(new java.util.ArrayList<>(List.of(datasheet(), download())));
+        when(aiModelSpecificationRepository.findById("spec-1")).thenReturn(Optional.of(stored));
+        when(aiModelSpecificationRepository.save(any(AiModelSpecification.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        // No attachment in the PATCH: both attachments stay.
+        AiModelSpecificationUpdate update = new AiModelSpecificationUpdate();
+        update.setDescription("new");
+        AiModelSpecification patched = service.updateAiModelSpecification("spec-1", update);
+        assertEquals(2, patched.getAttachment().size());
+        assertEquals("datasheet.pdf", patched.getAttachment().get(0).getName());
+        assertEquals(10f, org.etsi.osl.controllers.tmf915.artifacts.DownloadAttachments
+                .find(patched.getAttachment()).orElseThrow().getSize().getAmount());
+
+        // The client replaces the list without the download attachment: it is put back.
+        AiModelSpecificationUpdate withoutDownload = new AiModelSpecificationUpdate();
+        withoutDownload.setAttachment(new java.util.ArrayList<>());
+        patched = service.updateAiModelSpecification("spec-1", withoutDownload);
+        assertEquals(1, patched.getAttachment().size());
+        assertEquals(org.etsi.osl.controllers.tmf915.artifacts.DownloadAttachments.TYPE, patched.getAttachment().get(0).getAtType());
+
+        // A client's own download attachment (e.g. a bigger size) is ignored.
+        org.etsi.osl.controllers.tmf915.model.AttachmentRefOrValue forged = download();
+        forged.setSize(new org.etsi.osl.controllers.tmf915.model.Quantity().amount(1f).units("bytes"));
+        AiModelSpecificationUpdate withForged = new AiModelSpecificationUpdate();
+        withForged.setAttachment(new java.util.ArrayList<>(List.of(datasheet(), forged)));
+        patched = service.updateAiModelSpecification("spec-1", withForged);
+        assertEquals(2, patched.getAttachment().size());
+        assertEquals(10f, org.etsi.osl.controllers.tmf915.artifacts.DownloadAttachments
+                .find(patched.getAttachment()).orElseThrow().getSize().getAmount());
+    }
+
+    @Test
+    void patchDownloadableFalse_removesTheDownloadAttachment() {
+        AiModelSpecification stored = new AiModelSpecification();
+        stored.setId("spec-1");
+        stored.setAttachment(new java.util.ArrayList<>(List.of(datasheet(), download())));
+        when(aiModelSpecificationRepository.findById("spec-1")).thenReturn(Optional.of(stored));
+        when(aiModelSpecificationRepository.save(any(AiModelSpecification.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        AiModelSpecificationUpdate update = new AiModelSpecificationUpdate();
+        update.setAttachment(new java.util.ArrayList<>(List.of(datasheet())));
+        update.addSpecCharacteristicItem(downloadable("false"));
+        AiModelSpecification patched = service.updateAiModelSpecification("spec-1", update);
+
+        assertEquals(1, patched.getAttachment().size());
+        assertEquals("datasheet.pdf", patched.getAttachment().get(0).getName());
+    }
+
+    @Test
+    void addDownloadAttachments_onlyWhenMissing() {
+        AiModelSpecification stored = new AiModelSpecification();
+        stored.setId("spec-1");
+        stored.setName("iris");
+        stored.setVersion("1");
+        when(aiModelSpecificationRepository.findById("spec-1")).thenReturn(Optional.of(stored));
+
+        assertTrue(service.addDownloadAttachments("spec-1", List.of(ARTIFACT)));
+        assertEquals(java.net.URI.create("/tmf-api/AiM/v4/aiModelSpecification/spec-1/artifacts?format=mlflow-model"),
+                stored.getAttachment().get(0).getHref());
+        assertFalse(service.addDownloadAttachments("spec-1", List.of(ARTIFACT)));
+        verify(aiModelSpecificationRepository, times(1)).save(stored);
+
+        when(aiModelSpecificationRepository.findById("gone")).thenReturn(Optional.empty());
+        assertFalse(service.addDownloadAttachments("gone", List.of(ARTIFACT)));
+    }
+
+    @Test
+    void patch_keepsEveryFormatsDownloadAttachment() {
+        org.etsi.osl.controllers.tmf915.model.AttachmentRefOrValue onnx =
+                org.etsi.osl.controllers.tmf915.artifacts.DownloadAttachments.create("iris", "1",
+                        new org.etsi.osl.controllers.tmf915.artifacts.ModelArtifact(java.net.URI.create("s3://mlflow/x/extra_files"),
+                                "onnx", List.of(new org.etsi.osl.controllers.tmf915.artifacts.ArtifactFile("model.onnx", 4)), 4));
+        AiModelSpecification stored = new AiModelSpecification();
+        stored.setId("spec-1");
+        stored.setAttachment(new java.util.ArrayList<>(List.of(datasheet(), download(), onnx)));
+        when(aiModelSpecificationRepository.findById("spec-1")).thenReturn(Optional.of(stored));
+        when(aiModelSpecificationRepository.save(any(AiModelSpecification.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        AiModelSpecificationUpdate update = new AiModelSpecificationUpdate();
+        update.setAttachment(new java.util.ArrayList<>());
+        AiModelSpecification patched = service.updateAiModelSpecification("spec-1", update);
+
+        assertEquals(List.of("mlflow-model", "onnx"), patched.getAttachment().stream()
+                .map(org.etsi.osl.controllers.tmf915.model.AttachmentRefOrValue::getAttachmentType).toList());
+    }
 }

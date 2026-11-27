@@ -10,11 +10,13 @@ This document describes the end-to-end lifecycle of an AI model deployment in th
 
 ### 1. High-Performance Synchronization
 
-Instead of naively fetching models using inefficient Python binaries, the `MlflowSyncService` utilizes direct Java-to-S3 integration for rapid synchronization.
+The generic `CatalogSyncService` runs every platform's `CatalogSource` (MLflow: `MlflowCatalogSource`) once a minute and checks storage directly from Java (MinIO client), without Python.
 
-* **Dual Compatibility:** The fetch logic cascades through two endpoints: the newer **MLflow 2.x Logged Models API**, rolling back to the **Classic Model Registry API** if unavailable.
-* **Positive Cache (Passive):** Once an `AiModelSpecification` is cataloged, its `{experimentName}/{modelId}` key sits permanently inside `ConcurrentHashMap.newKeySet()`. Subsequent sync cycles bypass database index scanning entirely.
-* **Negative Cache (Active Backoff):** Models that are logged but lack backing tracking files in MinIO (e.g. S3 deletion out of band) suffer a 10-minute penalty logic. S3's `io.minio.MinioClient.statObject` ensures HTTP `HEAD` operations validate actual presence with millisecond latency, actively dodging missing logs.
+* **Dual Compatibility:** The MLflow source searches the **Logged Models API** (MLflow 3) and falls back to the **Classic Model Registry API** when a full search finds no logged models.
+* **Incremental searches:** Between full searches (every 10 minutes), only models created since the newest one seen are fetched, with a 5-minute overlap.
+* **Positive Cache (Passive):** Once a model is catalogued, its key (MLflow: `{experimentName}:{modelId}`) is remembered per source. Later sync cycles skip the database lookup entirely.
+* **Negative Cache (Active Backoff):** Models that are logged but whose files are not in MinIO yet are skipped for 10 minutes. The check lists at most one object under the artifact URI.
+* **Platform-neutral fields:** every synced specification gets `platform`, `artifactFormat` and, if the model can be downloaded, the download `attachment`.
 
 ### 2. Model Instantiation API Handling
 

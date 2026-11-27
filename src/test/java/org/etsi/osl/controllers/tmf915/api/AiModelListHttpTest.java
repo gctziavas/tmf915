@@ -272,6 +272,73 @@ class AiModelListHttpTest {
                 .andExpect(jsonPath("$.specCharacteristic", hasSize(2)));
     }
 
+    // PATCH must leave out lists the client did not send. The generated *Update models used to
+    // default every list to [], so an omitted list arrived as an empty one and replaced the
+    // stored list: any PATCH erased notes (deployment failure reasons), software, related
+    // parties, attachments, constraints, … A list that is sent, even [], still replaces.
+
+    private void patchJson(String path, String json) throws Exception {
+        mockMvc.perform(patch(BASE + path).contentType(MediaType.APPLICATION_JSON).content(json))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void patchAiModel_keepsListsTheClientDidNotSend() throws Exception {
+        String id = aiModelRepositoryService.findAiModels(0, 1).get(0).getId();
+        patchJson("/aiModel/" + id, "{\"note\":[{\"text\":\"deployment failed: reason\"}],"
+                + "\"software\":[{\"id\":\"mlflow\"}],"
+                + "\"relatedParty\":[{\"id\":\"p1\",\"role\":\"owner\",\"@referredType\":\"Individual\"}]}");
+
+        patchJson("/aiModel/" + id, "{\"description\":\"patched\"}");
+
+        mockMvc.perform(get(BASE + "/aiModel/" + id))
+                .andExpect(jsonPath("$.description").value("patched"))
+                .andExpect(jsonPath("$.note", hasSize(1)))
+                .andExpect(jsonPath("$.note[0].text").value("deployment failed: reason"))
+                .andExpect(jsonPath("$.software", hasSize(1)))
+                .andExpect(jsonPath("$.relatedParty", hasSize(1)))
+                .andExpect(jsonPath("$.serviceCharacteristic", hasSize(1)));
+    }
+
+    @Test
+    void patchAiModel_sentList_stillReplaces_andEmptyListClears() throws Exception {
+        String id = aiModelRepositoryService.findAiModels(0, 1).get(0).getId();
+        patchJson("/aiModel/" + id, "{\"note\":[{\"text\":\"a\"},{\"text\":\"b\"}],\"software\":[{\"id\":\"mlflow\"}]}");
+
+        patchJson("/aiModel/" + id, "{\"note\":[{\"text\":\"c\"}]}");
+        mockMvc.perform(get(BASE + "/aiModel/" + id))
+                .andExpect(jsonPath("$.note", hasSize(1)))
+                .andExpect(jsonPath("$.note[0].text").value("c"))
+                .andExpect(jsonPath("$.software", hasSize(1)));
+
+        patchJson("/aiModel/" + id, "{\"note\":[]}");
+        mockMvc.perform(get(BASE + "/aiModel/" + id))
+                .andExpect(jsonPath("$.note", hasSize(0)))
+                .andExpect(jsonPath("$.software", hasSize(1)));
+    }
+
+    @Test
+    void patchAiModelSpecification_keepsListsTheClientDidNotSend() throws Exception {
+        patchJson("/aiModelSpecification/spec-0", "{\"attachment\":[{\"name\":\"datasheet.pdf\"}],"
+                + "\"constraint\":[{\"id\":\"c1\"}],"
+                + "\"relatedParty\":[{\"id\":\"p1\",\"role\":\"publisher\",\"@referredType\":\"Organization\"}]}");
+
+        patchJson("/aiModelSpecification/spec-0", "{\"description\":\"patched\"}");
+
+        mockMvc.perform(get(BASE + "/aiModelSpecification/spec-0"))
+                .andExpect(jsonPath("$.description").value("patched"))
+                .andExpect(jsonPath("$.attachment", hasSize(1)))
+                .andExpect(jsonPath("$.attachment[0].name").value("datasheet.pdf"))
+                .andExpect(jsonPath("$.constraint", hasSize(1)))
+                .andExpect(jsonPath("$.relatedParty", hasSize(1)))
+                .andExpect(jsonPath("$.specCharacteristic", hasSize(1)));
+
+        patchJson("/aiModelSpecification/spec-0", "{\"attachment\":[]}");
+        mockMvc.perform(get(BASE + "/aiModelSpecification/spec-0"))
+                .andExpect(jsonPath("$.attachment", hasSize(0)))
+                .andExpect(jsonPath("$.constraint", hasSize(1)));
+    }
+
     @Test
     void listAiModel_legacyRowWithoutStoredReference_stillReturnsReference() throws Exception {
         // Saved straight through the repository: no stored serviceSpecification reference,

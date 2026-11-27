@@ -76,6 +76,10 @@ services:
       MLFLOW_SYNC_ENABLED: "true"
       # ── Deployment URI exposed via env (maps to aimodel.deployment.serving-base-url) ──
       AIMODEL_DEPLOYMENT_SERVING_BASE_URL: ${AIMODEL_DEPLOYMENT_SERVING_BASE_URL:-}
+      # ── Model downloads (aimodel.artifacts.*; see docs/USER_GUIDE.md section 8) ──
+      AIMODEL_ARTIFACTS_ALLOWED_LOCATIONS: ${AIMODEL_ARTIFACTS_ALLOWED_LOCATIONS:-s3://mlflow/}
+      AIMODEL_ARTIFACTS_MAX_DOWNLOAD_BYTES: ${AIMODEL_ARTIFACTS_MAX_DOWNLOAD_BYTES:-2147483648}
+      AIMODEL_ARTIFACTS_DOWNLOAD_TIMEOUT: ${AIMODEL_ARTIFACTS_DOWNLOAD_TIMEOUT:-15m}
       # ── Docker: connect to host Docker daemon ──
       MLFLOW_DOCKER_HOST: unix:///var/run/docker.sock
     ports:

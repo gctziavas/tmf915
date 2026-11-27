@@ -3,7 +3,7 @@
 How to get your trained model into the TMF 915 catalog and served through the API. You log the model to MLflow as usual; the API picks it up, publishes it as an `aiModelSpecification`, and deploys it as an HTTP endpoint when someone asks for it.
 
 ```
-your training code ──log_model──▶ MLflow + MinIO ──sync, ~1 min──▶ aiModelSpecification ──deploy──▶ /invocations
+your training code ──log_model──▶ MLflow + MinIO ──sync, 1–2 min──▶ aiModelSpecification ──deploy──▶ /invocations
 ```
 
 No change to the API is needed per model.
@@ -86,6 +86,7 @@ print("Logged model:", model_info.model_id)   # m-…, becomes the catalog versi
 Notes on the example:
 
 - **`params`:** the values passed to `log_model(params=...)` are stored on the logged model, which is where the API reads them. Parameters logged only to the run with `mlflow.log_param` may not reach the catalog.
+- **Metrics:** log them right after `log_model`, as above. The catalog entry is created once, one minute after `log_model` finished (`aimodel.catalog.sync.settle-ms`), and never updated: metrics linked to the model later do not reach the catalog. Compute everything slow before `log_model`.
 - **Pandas input:** training on a DataFrame gives the signature real column names, so the example request body uses them.
 - **`skops_trusted_types`:** recent MLflow 3 releases (3.18 when this was checked) save scikit-learn models in the `skops` format and refuse to log a model containing types not explicitly trusted. Tree-based models (decision trees, random forests, gradient boosting) need `sklearn.tree._tree.Tree`. If `log_model` fails with "references untrusted types", trust exactly the types the message lists. If your MLflow version does not know this argument, remove it.
 
@@ -117,12 +118,80 @@ And these `specCharacteristic` entries:
 | `metric_<key>`                              | Metrics whose name contains`accuracy`, `precision`, `recall`, `f1`, `auc`, `loss`, `mse`, `rmse`, `mae`, `r2` or `score`; others are not shown |
 | `tags`                                      | Logged-model tags as`key=value, …`                                                                                                            |
 | `model_file_exists`                         | Set to`true`/`false` after a deployment attempt                                                                                                |
+| `platform`, `artifactFormat`                | `mlflow` and `mlflow-model`: which platform the model comes from, and the format clients download it in                                         |
+| `downloadable`                              | Only if you set the tag `downloadable` (see below)                                                                                              |
 
 The catalog entry is created once and not updated afterwards. Changing params or tags on an existing logged model in MLflow does not change the catalog; log a new model instead.
 
+### Downloads, and how to opt out
+
+By default, any API user with `ROLE_USER` can download your model's files and load them in their own code (see the [integration guide](INTEGRATION_GUIDE.md#5-using-a-model-as-a-library)). The specification then has an `attachment` of `@type` `ModelArtifactAttachment` with the download link, the format and the size.
+
+**What they receive:** a zip of everything under the logged model's artifact URI: `MLmodel`, the model files, `requirements.txt`, `conda.yaml`, `python_env.yaml` and any input example. Anything else you save into the model's directory is included too, so keep credentials and private data out of it.
+
+**To keep a model from being downloaded** (licence, confidential weights), give it the tag `downloadable` = `false` **when you log it**:
+
+```python
+model_info = mlflow.sklearn.log_model(..., tags={"downloadable": "false"})
+```
+
+In the classic Model Registry, tag the version or the registered model (a version's tag wins):
+
+```python
+from mlflow import MlflowClient
+MlflowClient().set_registered_model_tag("churn", "downloadable", "false")
+```
+
+The tag is read when the catalog entry is created, one to two minutes after logging. For a model that is already in the catalog, set the characteristic on the specification instead:
+
+```bash
+curl -s -X PATCH -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"specCharacteristic":[{"name":"downloadable","characteristicValueSpecification":[{"value":"false","isDefault":true}]}]}' \
+  "http://localhost:13082/tmf-api/AiM/v4/aiModelSpecification/<SPEC_ID>"
+```
+
+The download then answers `404` with the reason, and the attachment disappears. Setting it back to `true` (or removing it) makes the model downloadable again at once, but the attachment only reappears after the API's next restart. Opting out does not affect deployment: the model can still be deployed and called through its endpoint.
+
+### Also offer an ONNX version
+
+An MLflow model can only be loaded with Python and the libraries it was trained with (`requirements.txt`). An [ONNX](https://onnx.ai/) copy of the same model can be run with [ONNX Runtime](https://onnxruntime.ai/) from Python, Java, C#, C++ or JavaScript, without scikit-learn, PyTorch or MLflow, and is usually smaller and faster to load. If you add one, consumers can choose: the catalog entry then offers two downloads, `mlflow-model` and `onnx`.
+
+The API does not convert models; you add the ONNX file when you log the model, with `extra_files`. It must be called **`model.onnx`**. For the example in section 2 (`pip install skl2onnx onnxruntime`):
+
+```python
+import numpy as np
+from skl2onnx import to_onnx
+
+# Convert the fitted pipeline; the sample fixes the input type and width (4 float features).
+onx = to_onnx(pipeline, X_train.to_numpy(dtype=np.float32)[:1])
+with open("model.onnx", "wb") as f:
+    f.write(onx.SerializeToString())
+
+# Check the copy predicts like the original before publishing it.
+import onnxruntime as ort
+session = ort.InferenceSession("model.onnx")
+onnx_labels = session.run(None, {session.get_inputs()[0].name: X_test.to_numpy(dtype=np.float32)})[0]
+assert (onnx_labels == pipeline.predict(X_test)).all()
+
+model_info = mlflow.sklearn.log_model(
+    pipeline,
+    name="model",
+    ...,                                   # as in section 2
+    extra_files=["model.onnx"],            # → offered as the "onnx" format
+)
+```
+
+MLflow stores the file as `extra_files/model.onnx` in the model directory, which is where the API looks. Consumers download it with `GET /aiModelSpecification/<SPEC_ID>/artifacts?format=onnx`: a zip holding just `model.onnx`.
+
+- **Flavors:** `extra_files` exists for `sklearn`, `pytorch`, `xgboost`, `lightgbm`, `catboost`, `statsmodels` and `onnx` (checked with MLflow 3.10). `pyfunc` and `transformers` models cannot offer an ONNX copy this way.
+- **Converters:** `skl2onnx` (scikit-learn), `torch.onnx.export` (PyTorch), `onnxmltools` (XGBoost, LightGBM, CatBoost). Not every model converts; check predictions as above.
+- **One file:** the ONNX file must be self-contained. Models over 2 GB, which ONNX stores with separate weight files, are not supported.
+- **Size limit:** each format counts separately against the server's limit (2 GB by default). The full MLflow model includes the ONNX copy, so it is the larger download.
+- **When:** only at logging time. A model catalogued without the file does not get the ONNX download later; log a new version.
+
 ## 4. Check that your model was published
 
-Within about a minute (the sync runs every minute):
+Within one to two minutes. The sync runs every minute, and publishes a model only once MLflow reports it ready and one minute has passed since, so that the metrics you log right after `log_model` are included:
 
 ```bash
 # See the user guide, section 2, for getting $TOKEN
@@ -175,9 +244,12 @@ To remove a version from the catalog: `DELETE /aiModelSpecification/<SPEC_ID>`. 
 
 | Symptom                                                                   | Cause and fix                                                                                                                                                                                                                                                          |
 | ------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Model never appears in the catalog                                        | It was logged to a different MLflow server than the API's`mlflow.tracking-uri`; or its artifacts are not in MinIO (log: `no artifacts were found … Backing off for 10 minutes`); or it is only in the classic Model Registry while the server also has logged models. |
+| Model never appears in the catalog                                        | It was logged to a different MLflow server than the API's`mlflow.tracking-uri`; or its artifacts are not in MinIO (log: `no artifacts were found … Backing off for 10 minutes`); or it is only in the classic Model Registry while the server also has logged models; or MLflow still reports it pending (log: `the platform is still writing it`), which stays so for good if the logging script stopped during `log_model`: log the model again; or its upload failed (log: `writing it failed`). |
 | Catalog`description` is generic                                           | `config.version` was not passed in `log_model(params=...)`.                                                                                                                                                                                                            |
+| A metric is in MLflow but not in the catalog | It was linked to the model more than `aimodel.catalog.sync.settle-ms` (one minute) after `log_model`, after the catalog entry was created; or its name contains none of the words listed in [section 3](#3-what-ends-up-in-the-catalog). Log it right after `log_model`, then log the model again to get a new catalog entry. |
 | `inferencePayloadExample` contains `WARNING: Could not extract signature` | No signature was logged. Log the model again with`signature=` or `input_example=`.                                                                                                                                                                                     |
 | Deployment goes back to `designed`, note "Image build failed: model files not found" | Artifacts missing or unreadable in MinIO. Check the bucket in the MinIO console (http://localhost:9011). |
 | Deployment goes back to `designed`, note "Image build failed" | `mlflow models build-docker` could not build your environment, usually an unpinned or unavailable dependency. The note has a reference; the operator finds the build output in the server log with it. Or run `mlflow models build-docker -m <artifactUri> -n test` yourself, and pin versions with `pip_requirements=`. |
+| No `onnx` attachment although you added an ONNX copy | The file is not named `model.onnx`, was not passed with `extra_files` (check that the MLflow UI shows `extra_files/model.onnx` under the model's artifacts), the model was logged with a flavor without `extra_files`, or it is above the size limit. |
+| Specification has no `ModelArtifactAttachment`                            | The model opted out (`downloadable=false`); or its artifacts are outside the storage the API may read (`aimodel.artifacts.allowed-locations`, the `mlflow` bucket by default); or they are larger than `aimodel.artifacts.max-download-bytes`; or the API has no S3 settings. Models catalogued before downloads existed get the attachment after the API's next restart. |
 | Endpoint returns`400`                                                     | The request body doesn't match the signature. Start from`inferencePayloadExample` and replace the placeholder values.                                                                                                                                                  |

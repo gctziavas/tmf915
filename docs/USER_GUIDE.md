@@ -123,6 +123,7 @@ curl -s -H "Authorization: Bearer $TOKEN" "$API/aiModelSpecification/<SPEC_ID>"
 - **Name and version:** a specification's `name` is the MLflow experiment name, and its `version` is the MLflow model id (`m-…`).
 - **Paging:** lists return 50 items by default. Use `limit` and `offset` to page, for example `?offset=50&limit=50`.
 - **`fields`:** without `fields`, list responses contain every attribute, which can be large.
+- **Download a model:** instead of deploying it, you can download a model's files and run it in your own code: `curl -fSL -H "Authorization: Bearer $TOKEN" -o model.zip "$API/aiModelSpecification/<SPEC_ID>/artifacts"`. Downloadable specifications have an `attachment` with the link and size, one per format; add `?format=onnx` for the ONNX version when one is offered. See the [integration guide](INTEGRATION_GUIDE.md#5-using-a-model-as-a-library) for loading it.
 
 ---
 
@@ -217,7 +218,7 @@ POST state=reserved ────────────────────
 
 - **Restarts:** after a restart, the API re-schedules `reserved` models and the automatic teardown of `active` ones.
 - **Allowed state changes:** with `PATCH` you can request only `reserved` (from `feasibilityChecked`, `designed` or `terminated`) and `inactive` (from `active` or `reserved`). Anything else returns `400`. To redeploy an active model, set it to `inactive`, then to `reserved`. Sending the model's current state is accepted and changes nothing.
-- **Other changes:** other fields can be changed with `PATCH` at any time. `serviceCharacteristic` entries are merged by `name`.
+- **Other changes:** other fields can be changed with `PATCH` at any time. Send only what you change: lists you leave out (`note`, `software`, `relatedParty`, …) are kept, and a list you send replaces the stored one. `serviceCharacteristic` entries are merged by `name`.
 
 ---
 
@@ -232,10 +233,11 @@ Settings live in `src/main/resources/application.yml`. In Docker Compose, overri
 | `spring.security.oauth2.resourceserver.jwt.jwk-set-uri` | Keycloak certs URL | Where the API fetches Keycloak's signing keys. |
 | `mlflow.enabled` | `true` | MLflow integration. With `false`, the API runs without MLflow: specifications and models can be created and read, but nothing is synced from MLflow or deployed. |
 | `mlflow.tracking-uri` | `http://127.0.0.1:5000` | MLflow server. |
-| `mlflow.s3-endpoint-url`, `s3-access-key`, `s3-secret-key` | empty | MinIO/S3 holding the model artifacts. |
+| `mlflow.s3-endpoint-url`, `s3-access-key`, `s3-secret-key` | empty | MinIO/S3 holding the model artifacts. Also set by the environment variables `MLFLOW_S3_ENDPOINT_URL`, `MLFLOW_S3_ACCESS_KEY`, `MLFLOW_S3_SECRET_KEY`, which win. Used by the MLflow sync and by model downloads; without them, nothing can be downloaded. |
 | `mlflow.sync.enabled` | `true` | Publish MLflow models to the catalog automatically. |
-| `mlflow.sync.interval-ms` | `60000` | How often to look for new models. |
-| `mlflow.sync.full-interval-ms` | `600000` | How often to re-read all models (in between, only new ones are fetched). |
+| `aimodel.catalog.sync.interval-ms` | `60000` | How often to look for new models, on every platform. If unset, `mlflow.sync.interval-ms` is used (the setting's earlier name, still read). |
+| `aimodel.catalog.sync.full-interval-ms` | `600000` | How often to re-read all models (in between, only new ones are fetched). If unset, `mlflow.sync.full-interval-ms` is used. |
+| `aimodel.catalog.sync.settle-ms` | `60000` | How long after a model is ready (for MLflow: after `log_model` finished) it is published, so that metrics logged right after it are in the catalog entry. Models MLflow reports as still being written are not published until they are ready. `0` publishes at the next sync. Keep it under 5 minutes: longer, and new models are often found only by the full search. |
 | `mlflow.docker.host` | local socket | Default Docker daemon for deployments. |
 | `mlflow.docker.allowed-hosts` | empty | Other Docker daemons clients may name in the `dockerHost` characteristic, comma-separated (for example `tcp://10.0.0.5:2375,tcp://10.0.0.6:2375`). `mlflow.docker.host` is always allowed. |
 | `mlflow.docker.host-port-start`, `host-port-end` | `3000`–`7000` | Port range for model endpoints. |
@@ -243,7 +245,12 @@ Settings live in `src/main/resources/application.yml`. In Docker Compose, overri
 | `mlflow.docker.command-timeout-seconds` | `30` | Timeout for Docker commands other than the image build. |
 | `aimodel.specification.default-lifecycle-status` | `Active` | `lifecycleStatus` given to specifications created from MLflow. |
 | `aimodel.deployment.serving-base-url` | empty | Public base of model endpoints on the default Docker host. `http://models.example.com` gives `http://models.example.com:<port>/invocations`; a template such as `https://gateway.example.com/models/{port}` replaces `{port}`. Empty: the Docker host's address (`localhost` for a local socket). Deployments on another `dockerHost` keep that host's address. An invalid value stops the application at startup. |
-| `hub.webhook.enabled` | `false` | Send event notifications to subscribers (see the [integration guide](INTEGRATION_GUIDE.md#5-event-notifications-webhooks)). |
+| `aimodel.artifacts.allowed-locations` | `s3://mlflow/` | Storage locations model downloads may read, comma-separated. A specification whose `artifactUri` is elsewhere (for example one created with `POST`) cannot be downloaded (`404`). Matches whole path segments: `s3://mlflow/prod` allows `s3://mlflow/prod/…`, not `s3://mlflow/production`. |
+| `aimodel.artifacts.max-download-bytes` | `2147483648` (2 GB) | Larger models are not offered for download (`413`). |
+| `aimodel.artifacts.download-timeout` | `15m` | Longest time one download may take; it is then cut off, so a slow client cannot keep a connection and a storage stream open. Raise it for large models on slow links. |
+| `aimodel.artifacts.backfill-on-startup` | `true` | After startup, add the download `attachment` to downloadable specifications that have none (those catalogued before downloads existed). |
+| `spring.task.execution.pool.core-size` | `8` | Spring's shared pool for background work, which streams the model downloads (and runs the startup backfill). At most this many downloads run at once; more wait for a free thread. Downloads have no limit of their own. |
+| `hub.webhook.enabled` | `false` | Send event notifications to subscribers (see the [integration guide](INTEGRATION_GUIDE.md#6-event-notifications-webhooks)). |
 | `hub.webhook.allowed-callback-hosts` | empty | If set (comma-separated host names), only these callback hosts are accepted, including internal ones. |
 | `hub.webhook.block-private-addresses` | `true` | Refuse callbacks that resolve to loopback, link-local or private addresses. Applies when `allowed-callback-hosts` is empty. |
 | `server.compression.enabled` | `true` | gzip responses for clients that accept it. |
@@ -256,11 +263,14 @@ Settings live in `src/main/resources/application.yml`. In Docker Compose, overri
 |---|---|
 | Every call returns `401` | The token is expired, or its issuer doesn't match `keycloak.issuer-uri`. Get a new token from the exact URL configured (see 1.1). |
 | `403` | The user lacks the realm role `ROLE_USER`. |
-| A newly logged model is not in the catalog | Wait one or two minutes. Then check the API log (`docker compose logs tmf915 \| grep "MLflow sync"`). "no artifacts were found" means the files are not in MinIO yet; the API retries every 10 minutes. |
+| A newly logged model is not in the catalog | Wait one or two minutes. Then check the API log (`docker compose logs tmf915 \| grep "Catalog sync"`). "no artifacts were found" means the files are not in MinIO yet; the API retries every 10 minutes. "the platform is still writing it" means MLflow reports the model pending; if the logging script stopped during `log_model`, it stays so: log the model again. |
 | Model stays `reserved` | `startDate` is in the future, the image is still building (minutes), or the `platform=mlflow` characteristic is missing. |
 | Model goes back to `designed` | Read the last `note`. It gives a short reason and a reference, for example `Image build failed (reference 3f2c9a1b; details are in the server log)`. Find the details with `docker compose logs tmf915 \| grep 3f2c9a1b`. "model files not found": the artifacts are missing in MinIO. "No free host port": every port in `host-port-start`–`host-port-end` is taken. "Docker host not allowed": see `mlflow.docker.allowed-hosts`. |
 | Model disappeared from `active` after a day | `endDate` defaults to one day after `startDate`. Set `endDate` when deploying. |
 | `endpoint` not reachable | With the local Docker socket the endpoint host is `localhost`. Set `aimodel.deployment.serving-base-url` (environment variable `AIMODEL_DEPLOYMENT_SERVING_BASE_URL`) to the address clients use, and redeploy; models deployed earlier keep their old endpoint. Or deploy with a `tcp://` `dockerHost`. |
+| `404` when downloading a model (`…/artifacts`) | The body says why. "downloadable=false": the publisher opted out. "has no download in format …": that format is not offered for this model; see its attachments. "has no downloadable artifact": the files are not in MinIO, are outside `aimodel.artifacts.allowed-locations`, or the API has no S3 settings; the API log (`grep "AiModelSpecification <id>"`) says which. |
+| `413` when downloading a model | Larger than `aimodel.artifacts.max-download-bytes`. |
+| Downloaded zip is incomplete | The download took longer than `aimodel.artifacts.download-timeout` (log: `Model download failed … DownloadTimeoutException`). Raise it, or download from closer to the server. |
 | `415 Unsupported Media Type` | Send `Content-Type: application/json`. |
 | `400` on `POST /aiModel` | The response's `errors` list names the field. The most common one is a missing `software` (`[{"id": "mlflow"}]` is enough). |
 | `400` when registering a webhook | The callback is not an `http`/`https` URL, or it points at an internal address; the response says which. See `hub.webhook.allowed-callback-hosts`. |

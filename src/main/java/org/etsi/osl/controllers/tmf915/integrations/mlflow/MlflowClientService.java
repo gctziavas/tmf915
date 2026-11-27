@@ -13,7 +13,8 @@ import org.mlflow.tracking.Page;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpEntity;
@@ -44,23 +45,23 @@ public class MlflowClientService {
     private final MlflowClient mlflowClient;
     private final RestTemplate restTemplate;
     private final ObjectMapper objectMapper;
-    private MinioClient minioClient;
+    /** Shared with model downloads ({@code artifacts.S3Configuration}); null without S3 settings. */
+    private final MinioClient minioClient;
 
+    @Autowired
     public MlflowClientService(MlflowClient mlflowClient,
                                 @Qualifier("mlflowRestTemplate") RestTemplate restTemplate,
-                                @Value("${mlflow.s3.endpoint.url:}") String s3EndpointUrl,
-                                @Value("${mlflow.s3.access.key:}") String s3AccessKey,
-                                @Value("${mlflow.s3.secret.key:}") String s3SecretKey) {
+                                ObjectProvider<MinioClient> minioClient) {
+        this(mlflowClient, restTemplate, minioClient.getIfAvailable());
+    }
+
+    MlflowClientService(MlflowClient mlflowClient, RestTemplate restTemplate, MinioClient minioClient) {
         this.mlflowClient = mlflowClient;
         this.restTemplate = restTemplate;
         this.objectMapper = new ObjectMapper();
-        
-        if (!s3EndpointUrl.isEmpty() && !s3AccessKey.isEmpty() && !s3SecretKey.isEmpty()) {
-            log.info("Initialising MinioClient for native S3 artifact checking");
-            this.minioClient = MinioClient.builder()
-                    .endpoint(s3EndpointUrl)
-                    .credentials(s3AccessKey, s3SecretKey)
-                    .build();
+        this.minioClient = minioClient;
+        if (minioClient == null) {
+            log.info("No S3 settings: the MLflow sync cannot check for artifacts in storage");
         }
     }
 

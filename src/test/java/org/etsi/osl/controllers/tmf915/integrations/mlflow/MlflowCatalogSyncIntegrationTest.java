@@ -1,5 +1,6 @@
 package org.etsi.osl.controllers.tmf915.integrations.mlflow;
 
+import org.etsi.osl.controllers.tmf915.catalog.CatalogSyncService;
 import org.etsi.osl.controllers.tmf915.model.AiModelSpecification;
 import org.etsi.osl.controllers.tmf915.model.AiModelSpecificationCreate;
 import org.etsi.osl.controllers.tmf915.reposervices.AiModelSpecificationRepositoryService;
@@ -9,6 +10,8 @@ import org.junit.jupiter.api.Test;
 import org.mlflow.api.proto.Service.Experiment;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.annotation.DirtiesContext;
+import org.springframework.test.annotation.DirtiesContext.MethodMode;
 import org.springframework.test.context.ActiveProfiles;
 
 import java.util.ArrayList;
@@ -21,22 +24,23 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.junit.jupiter.api.Assumptions.assumeFalse;
 
 /**
- * Integration tests for {@link MlflowSyncService} against a live MLflow instance.
- * Verifies that MLflow models are correctly synced as TMF 915 AiModelSpecifications.
+ * The catalog sync ({@link CatalogSyncService} with {@link MlflowCatalogSource}) against a live
+ * MLflow instance: MLflow models become TMF 915 AiModelSpecifications.
  *
- * The sync service tries logged models first, then falls back to classic registry.
+ * The MLflow source tries logged models first, then falls back to the classic registry.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE,
         properties = {
                 "mlflow.sync.enabled=true",
-                "mlflow.sync.interval-ms=9999999"   // prevent auto-trigger
+                "aimodel.catalog.sync.interval-ms=9999999",  // prevent auto-trigger
+                "aimodel.catalog.sync.settle-ms=0"           // publish models logged just before the test
         })
 @ActiveProfiles("integration")
 @Tag("integration")
-class MlflowSyncServiceIntegrationTest {
+class MlflowCatalogSyncIntegrationTest {
 
     @Autowired
-    private MlflowSyncService syncService;
+    private CatalogSyncService syncService;
 
     @Autowired
     private MlflowClientService mlflowClientService;
@@ -57,7 +61,14 @@ class MlflowSyncServiceIntegrationTest {
         createdSpecIds.clear();
     }
 
+    /**
+     * Needs a sync that has not run yet: the sync remembers the models it has published and does
+     * not recreate their specifications after a delete (until a restart, as documented in
+     * MODEL_PUBLISHING_GUIDE.md section 6). Without a fresh context this test failed whenever it
+     * ran after {@link #syncModels_isIdempotent()}.
+     */
     @Test
+    @DirtiesContext(methodMode = MethodMode.BEFORE_METHOD)
     void syncModels_createsSpecificationsFromLoggedModels() {
         List<LoggedModel> loggedModels = mlflowClientService.searchAllLoggedModels();
         assumeFalse(loggedModels.isEmpty(), "No logged models — skipping");
@@ -83,7 +94,7 @@ class MlflowSyncServiceIntegrationTest {
         List<AiModelSpecification> before = specRepo.findAllAiModelSpecifications(null, null);
 
         // Run sync
-        syncService.syncModels();
+        syncService.syncAll();
 
         // Verify new specs were created
         List<AiModelSpecification> after = specRepo.findAllAiModelSpecifications(null, null);
@@ -111,10 +122,10 @@ class MlflowSyncServiceIntegrationTest {
     @Test
     void syncModels_isIdempotent() {
         // Run sync twice
-        syncService.syncModels();
+        syncService.syncAll();
         List<AiModelSpecification> afterFirst = specRepo.findAllAiModelSpecifications(null, null);
 
-        syncService.syncModels();
+        syncService.syncAll();
         List<AiModelSpecification> afterSecond = specRepo.findAllAiModelSpecifications(null, null);
 
         assertEquals(afterFirst.size(), afterSecond.size(),

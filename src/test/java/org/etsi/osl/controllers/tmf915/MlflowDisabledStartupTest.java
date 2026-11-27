@@ -1,5 +1,6 @@
 package org.etsi.osl.controllers.tmf915;
 
+import org.etsi.osl.controllers.tmf915.catalog.CatalogSource;
 import org.etsi.osl.controllers.tmf915.deployment.AiModelLifecycleService;
 import org.etsi.osl.controllers.tmf915.deployment.PlatformDeployer;
 import org.etsi.osl.controllers.tmf915.integrations.mlflow.MlflowClientService;
@@ -28,6 +29,7 @@ class MlflowDisabledStartupTest {
     void startsWithoutAnyMlflowBean() {
         assertEquals(0, context.getBeanNamesForType(MlflowClientService.class).length);
         assertEquals(0, context.getBeanNamesForType(MlflowSpecificationService.class).length);
+        assertEquals(0, context.getBeanNamesForType(CatalogSource.class).length, "nothing to sync");
         assertEquals(0, context.getBeanNamesForType(PlatformDeployer.class).length,
                 "no deployer: models can be catalogued and created, not deployed");
     }

@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "3d4d13cd-95a0-4a4e-9549-34f3f4ed8b01",
     "name": "TMF915 - List AI Model Specifications and Deploy",
-    "description": "Collection to list existing AI model specifications and deploy an AI model from a selected specification.",
+    "description": "Collection to list existing AI model specifications, deploy an AI model from a selected specification, and download a model's files (requests 8-8.2).",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -77,6 +77,18 @@
     {
       "key": "inferenceBody",
       "value": ""
+    },
+    {
+      "key": "downloadSpecificationId",
+      "value": "",
+      "type": "string",
+      "description": "Set by request 8: a specification that can be downloaded."
+    },
+    {
+      "key": "downloadFormats",
+      "value": "",
+      "type": "string",
+      "description": "Set by request 8: the formats it is offered in (JSON array)."
     }
   ],
   "auth": {
@@ -524,6 +536,173 @@
           ]
         },
         "description": "Deletes the AI model. This stops the model container and removes it."
+      },
+      "response": []
+    },
+    {
+      "name": "8. Find a Downloadable AI Model Specification",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('List specifications status is 200', function () {",
+              "  pm.response.to.have.status(200);",
+              "});",
+              "",
+              "pm.test('A specification offers a download (ModelArtifactAttachment)', function () {",
+              "  var specs = pm.response.json();",
+              "  var spec = specs.find(function (s) {",
+              "    return (s.attachment || []).some(function (a) { return a['@type'] === 'ModelArtifactAttachment'; });",
+              "  });",
+              "  pm.expect(spec, 'no downloadable specification in the first ' + pm.collectionVariables.get('listLimit')).to.be.an('object');",
+              "  var formats = spec.attachment",
+              "    .filter(function (a) { return a['@type'] === 'ModelArtifactAttachment'; })",
+              "    .map(function (a) { return a.attachmentType; });",
+              "  pm.collectionVariables.set('downloadSpecificationId', spec.id);",
+              "  pm.collectionVariables.set('downloadFormats', JSON.stringify(formats));",
+              "  console.log('Downloadable: ' + spec.name + ' ' + spec.version + ' (' + spec.id + '), formats ' + formats.join(', '));",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json;charset=utf-8"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/aiModelSpecification?limit={{listLimit}}&fields=name,version,attachment",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "aiModelSpecification"
+          ],
+          "query": [
+            {
+              "key": "limit",
+              "value": "{{listLimit}}"
+            },
+            {
+              "key": "fields",
+              "value": "name,version,attachment"
+            }
+          ]
+        },
+        "description": "Lists specifications with their attachments and picks the first one that can be downloaded: it has an attachment of @type ModelArtifactAttachment, one per format (attachmentType), with the download link (href) and size. Stores its id and formats for requests 8.1 and 8.2. Downloading is a TMF 915 extension; see docs/INTEGRATION_GUIDE.md section 5."
+      },
+      "response": []
+    },
+    {
+      "name": "8.1 Download AI Model (primary format)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Download status is 200', function () {",
+              "  pm.response.to.have.status(200);",
+              "});",
+              "",
+              "pm.test('Content-Type is a zip', function () {",
+              "  pm.expect(pm.response.headers.get('Content-Type')).to.include('application/zip');",
+              "});",
+              "",
+              "pm.test('Content-Disposition names the file', function () {",
+              "  pm.expect(pm.response.headers.get('Content-Disposition')).to.include('attachment;');",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/zip"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/aiModelSpecification/{{downloadSpecificationId}}/artifacts",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "aiModelSpecification",
+            "{{downloadSpecificationId}}",
+            "artifacts"
+          ]
+        },
+        "description": "Downloads the model's files as a zip in its primary format (characteristic artifactFormat; mlflow-model for MLflow models). Use Send and Download to save the zip. Needs ROLE_USER. 404 with a reason in the body when the model cannot be downloaded, 413 above the server's size limit."
+      },
+      "response": []
+    },
+    {
+      "name": "8.2 Download AI Model as ONNX",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "var formats = JSON.parse(pm.collectionVariables.get('downloadFormats') || '[]');",
+              "",
+              "if (formats.indexOf('onnx') >= 0) {",
+              "  pm.test('Download status is 200', function () {",
+              "    pm.response.to.have.status(200);",
+              "  });",
+              "",
+              "  pm.test('Content-Type is a zip', function () {",
+              "    pm.expect(pm.response.headers.get('Content-Type')).to.include('application/zip');",
+              "  });",
+              "",
+              "  pm.test('Content-Disposition names the file', function () {",
+              "    pm.expect(pm.response.headers.get('Content-Disposition')).to.include('attachment;');",
+              "  });",
+              "} else {",
+              "  pm.test('Not offered as onnx: 404 with the reason', function () {",
+              "    pm.response.to.have.status(404);",
+              "    pm.expect(pm.response.text()).to.include('format onnx');",
+              "  });",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/zip"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/aiModelSpecification/{{downloadSpecificationId}}/artifacts?format=onnx",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "aiModelSpecification",
+            "{{downloadSpecificationId}}",
+            "artifacts"
+          ],
+          "query": [
+            {
+              "key": "format",
+              "value": "onnx"
+            }
+          ]
+        },
+        "description": "Downloads the ONNX copy of the model: a zip holding just model.onnx, which ONNX Runtime runs in any language. Offered only when the publisher logged the model with extra_files=[\"model.onnx\"] (docs/MODEL_PUBLISHING_GUIDE.md section 3); otherwise 404. Any attachmentType of the specification works as format."
       },
       "response": []
     }

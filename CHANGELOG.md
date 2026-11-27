@@ -1,0 +1,30 @@
+# Changelog
+
+Client-visible changes. Releases are not tagged yet; everything below is on `main` or on its way there.
+
+## Unreleased
+
+### Added
+
+- **Model download** (TMF 915 extension): `GET /tmf-api/AiM/v4/aiModelSpecification/{id}/artifacts` streams a model's files as a zip, so clients can load the model in their own code without access to MLflow or MinIO. Requires `ROLE_USER`. Answers `404` (unknown id, not downloadable, or opted out), `413` (above `aimodel.artifacts.max-download-bytes`, 2 GB by default) and `503` (storage unavailable), each with a plain-text reason. Downloads are cut off after `aimodel.artifacts.download-timeout` (15 minutes by default). See `docs/INTEGRATION_GUIDE.md` section 5.
+- New fields on specifications synced from MLflow: the characteristics `platform` (`mlflow`) and `artifactFormat` (`mlflow-model`), and, for downloadable models, an `attachment` of `@type` `ModelArtifactAttachment` with the download `href`, format, `mimeType` and `size`. Existing specifications get the attachment after the next start.
+- **ONNX downloads:** a model logged with an ONNX copy (`log_model(..., extra_files=["model.onnx"])`) is offered in a second format, `onnx`: a second `ModelArtifactAttachment` and `GET …/artifacts?format=onnx`, a zip holding just `model.onnx`, which ONNX Runtime runs in any language. `?format=` names any format a specification offers; an unknown one is `404`, a malformed one `400`. Without `format`, the download is unchanged. See `docs/MODEL_PUBLISHING_GUIDE.md` section 3.
+- The MCP tools `listAvailableAiModelSpecifications` and `getAiModelSpecification` return `downloads` for each specification: the formats it can be downloaded in, with `href` and `sizeBytes`. Downloading still needs a token.
+- Publishers can opt a model out of downloads with the MLflow tag `downloadable=false`, or by setting the characteristic `downloadable` to `false` on the specification.
+
+### Fixed
+
+- **Tokens from the demo Keycloak realm had no `sub` claim**, so the server could not tell who downloaded a model (the log said `user=null`). Keycloak 25 and later add `sub` through the `basic` client scope, which the client `osapiWebClientId` in `docker/keycloak/openslice-realm.json` did not list; it now does. The API also falls back to `preferred_username` for tokens without `sub`, from any Keycloak. An existing stack keeps the realm it imported (Keycloak skips realms that exist): add the scope in the Keycloak admin console (realm `openslice`, Clients, `osapiWebClientId`, Client scopes, Add client scope, `basic`, as Default).
+- MLflow classic Model Registry: versions whose `source` is a full URI (for example `s3://mlflow/…`) were never catalogued, because the artifact check prefixed the bucket a second time (`s3://mlflow/s3://mlflow/…`) and always found nothing.
+
+- **`PATCH` erased lists the client did not send**, on both `aiModel` and `aiModelSpecification`. A PATCH of, say, `description` or `state` emptied `note` (including deployment failure reasons), `software`, `relatedParty`, `attachment`, `constraint` and every other list attribute that was left out. Now an omitted list is kept, a sent list replaces the stored one, and `[]` clears it. `serviceCharacteristic` and `specCharacteristic` still merge by `name`. Data already erased by earlier PATCHes cannot be restored by this fix.
+
+### Changed
+
+- **The catalog waits until a logged model is complete.** A model is published only once MLflow reports it ready, and one minute after that (`aimodel.catalog.sync.settle-ms`), so metrics linked right after `log_model` are in its catalog entry; before, a sync tick in between created the entry without them, for good. New models therefore appear one to two minutes after logging instead of up to one. Models MLflow reports as still being written (a script stopped during `log_model`) or as failed are not published. Classic Model Registry versions are unaffected.
+- The catalog sync is now platform-neutral (`CatalogSyncService` with one `CatalogSource` per platform). For operators: its schedule settings are `aimodel.catalog.sync.interval-ms` and `aimodel.catalog.sync.full-interval-ms`; the old `mlflow.sync.interval-ms` and `mlflow.sync.full-interval-ms` are still read when the new ones are unset. Its log lines start with `Catalog sync (mlflow…)` instead of `MLflow sync`. API clients see no change.
+
+- `INTEGRATION_GUIDE.md`: sections 5 to 8 are now 6 to 9 (new section 5, "Using a model as a library").
+- The `mlflow.s3-endpoint-url`, `s3-access-key` and `s3-secret-key` settings in `application.yml` now take effect; before, only the `MLFLOW_S3_*` environment variables did. Environment variables still win.
+- A `PATCH` of a specification can no longer remove or replace its download attachments.
+- Download attachments name their format: `href` ends in `?format=<attachmentType>` and `name` is `<name>-<version>-<format>.zip`, also on specifications catalogued earlier (set whenever a specification is read or stored). The link without `format` still works.
