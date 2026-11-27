@@ -26,7 +26,8 @@ import java.util.Map;
  * <ul>
  *   <li><b>Logged models</b> (MLflow 3): one specification per logged model, named after its
  *       experiment, with the model id as version. Incremental searches use MLflow's
- *       {@code creation_time} filter.</li>
+ *       {@code creation_time} filter. A model is reported pending while MLflow is still writing
+ *       it, and ready from its last update (see {@link #status} and {@link #readyAtMs}).</li>
  *   <li><b>Classic Model Registry</b>: searched only when a full search finds no logged models,
  *       one specification per registered model version. Registry versions carry no creation
  *       time for the sync, so a registry-only server is searched in full every tick.</li>
@@ -100,9 +101,35 @@ public class MlflowCatalogSource implements CatalogSource<MlflowCatalogSource.Ml
             LoggedModel.LoggedModelInfo info = model.getInfo();
             String experimentName = experimentNames.computeIfAbsent(info.getExperimentId(), this::experimentName);
             discovered.add(new DiscoveredModel<>(experimentName + ":" + info.getModelId(), experimentName,
-                    info.getModelId(), info.getCreationTimestampMs(), new LoggedModelEntry(model)));
+                    info.getModelId(), info.getCreationTimestampMs(), new LoggedModelEntry(model),
+                    status(info.getStatus()), readyAtMs(info)));
         }
         return discovered;
+    }
+
+    /**
+     * A logged model's status as MLflow 3.18 reports it: {@code LOGGED_MODEL_PENDING} from
+     * {@code initialize_logged_model} until {@code log_model} finalizes it, then
+     * {@code LOGGED_MODEL_READY}, or {@code LOGGED_MODEL_UPLOAD_FAILED}. Anything else, including
+     * no status, counts as ready, as before statuses were read; the artifact check still applies.
+     */
+    static DiscoveredModel.Status status(@Nullable String mlflowStatus) {
+        if ("LOGGED_MODEL_PENDING".equals(mlflowStatus)) {
+            return DiscoveredModel.Status.PENDING;
+        }
+        if ("LOGGED_MODEL_UPLOAD_FAILED".equals(mlflowStatus)) {
+            return DiscoveredModel.Status.FAILED;
+        }
+        return DiscoveredModel.Status.READY;
+    }
+
+    /**
+     * When the logged model was ready: its last update, which MLflow sets when the model is
+     * finalized. Linking a metric to the model afterwards does not change it (checked with 3.18),
+     * so the sync's settle time counts from the end of {@code log_model}, also after a slow upload.
+     */
+    static long readyAtMs(LoggedModel.LoggedModelInfo info) {
+        return info.getLastUpdatedTimestampMs() > 0 ? info.getLastUpdatedTimestampMs() : info.getCreationTimestampMs();
     }
 
     private List<DiscoveredModel<MlflowModel>> registryVersions(List<ModelVersion> versions) {
@@ -110,6 +137,8 @@ public class MlflowCatalogSource implements CatalogSource<MlflowCatalogSource.Ml
         Map<String, DiscoveredModel<MlflowModel>> unique = new LinkedHashMap<>();
         for (ModelVersion version : versions) {
             String key = "registry:" + version.getName() + ":" + version.getVersion();
+            // Ready, without a ready time: the registry's status is not read (an unset protobuf
+            // status reads as PENDING_REGISTRATION), so registry versions are published as before.
             unique.putIfAbsent(key, new DiscoveredModel<>(key, version.getName(), version.getVersion(), 0,
                     new RegistryVersion(version)));
         }

@@ -21,6 +21,7 @@ Client-visible changes. Releases are not tagged yet; everything below is on `mai
 
 ### Changed
 
+- **The catalog waits until a logged model is complete.** A model is published only once MLflow reports it ready, and one minute after that (`aimodel.catalog.sync.settle-ms`), so metrics linked right after `log_model` are in its catalog entry; before, a sync tick in between created the entry without them, for good. New models therefore appear one to two minutes after logging instead of up to one. Models MLflow reports as still being written (a script stopped during `log_model`) or as failed are not published. Classic Model Registry versions are unaffected.
 - The catalog sync is now platform-neutral (`CatalogSyncService` with one `CatalogSource` per platform). For operators: its schedule settings are `aimodel.catalog.sync.interval-ms` and `aimodel.catalog.sync.full-interval-ms`; the old `mlflow.sync.interval-ms` and `mlflow.sync.full-interval-ms` are still read when the new ones are unset. Its log lines start with `Catalog sync (mlflow…)` instead of `MLflow sync`. API clients see no change.
 
 - `INTEGRATION_GUIDE.md`: sections 5 to 8 are now 6 to 9 (new section 5, "Using a model as a library").

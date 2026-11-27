@@ -5,6 +5,7 @@ import org.etsi.osl.controllers.tmf915.artifacts.ArtifactFile;
 import org.etsi.osl.controllers.tmf915.artifacts.ArtifactService;
 import org.etsi.osl.controllers.tmf915.artifacts.DownloadAttachments;
 import org.etsi.osl.controllers.tmf915.artifacts.ModelArtifact;
+import org.etsi.osl.controllers.tmf915.catalog.DiscoveredModel.Status;
 import org.etsi.osl.controllers.tmf915.model.AiModelSpecification;
 import org.etsi.osl.controllers.tmf915.model.AiModelSpecificationCreate;
 import org.etsi.osl.controllers.tmf915.reposervices.AiModelSpecificationRepositoryService;
@@ -34,6 +35,8 @@ class CatalogSyncServiceTest {
     private static final long FULL_INTERVAL = 600_000;
     private static final long TICK = 60_000;
     private static final long OVERLAP = CatalogSyncService.INCREMENTAL_OVERLAP_MS;
+    /** The default of {@code aimodel.catalog.sync.settle-ms}. */
+    private static final long SETTLE = 60_000;
     private static final long T0 = 10_000_000;
 
     private final AiModelSpecificationRepositoryService specifications = mock(AiModelSpecificationRepositoryService.class);
@@ -48,7 +51,12 @@ class CatalogSyncServiceTest {
     }
 
     private CatalogSyncService newSync(CatalogSource<?>... sources) {
-        CatalogSyncService s = new CatalogSyncService(List.of(sources), specifications, artifactService, FULL_INTERVAL);
+        return newSync(SETTLE, sources);
+    }
+
+    private CatalogSyncService newSync(long settleMs, CatalogSource<?>... sources) {
+        CatalogSyncService s = new CatalogSyncService(List.of(sources), specifications, artifactService,
+                FULL_INTERVAL, settleMs);
         now = T0;
         s.clock = () -> now;
         return s;
@@ -189,6 +197,109 @@ class CatalogSyncServiceTest {
         verify(specifications).createAiModelSpecification(created.capture());
         assertEquals("name-m-1", created.getValue().getName());
         assertEquals("v-m-1", created.getValue().getVersion());
+    }
+
+    // ── Models the platform has not finished, and the settle time ────────
+
+    @Test
+    void pendingModel_isSkippedWithoutBackOff_andPublishedOnceReadyAndSettled() {
+        long created = T0 - 100_000;
+        long ready = T0 + TICK - 1_000;
+        source.all = List.of(model("m-1", created, Status.PENDING, created));
+
+        sync.syncAll();                                      // t0: still being written
+        assertEquals(List.of(), source.artifactChecks, "a pending model is not checked in storage");
+        verify(specifications, times(0)).findAiModelSpecificationByNameAndVersion(any(), any());
+
+        now += TICK;
+        source.incrementalAnswers.add(List.of(model("m-1", created, Status.READY, ready)));
+        sync.syncAll();                                      // t0+1m: ready 1 s ago, settling
+        verify(specifications, times(0)).createAiModelSpecification(any());
+
+        now += TICK;
+        source.incrementalAnswers.add(List.of(model("m-1", created, Status.READY, ready)));
+        sync.syncAll();                                      // t0+2m: settled; no 10-minute back-off
+        verify(specifications, times(1)).createAiModelSpecification(any());
+        assertEquals(List.of("m-1"), source.converted);
+    }
+
+    @Test
+    void failedModel_isNotPublished_whileItStaysFailed() {
+        DiscoveredModel<String> failed = model("m-1", T0 - 100_000, Status.FAILED, T0 - 100_000);
+        source.all = List.of(failed);
+
+        sync.syncAll();
+        now += TICK;
+        source.incrementalAnswers.add(List.of(failed));
+        sync.syncAll();
+
+        verify(specifications, times(0)).createAiModelSpecification(any());
+        verify(specifications, times(0)).findAiModelSpecificationByNameAndVersion(any(), any());
+        assertEquals(List.of(), source.artifactChecks);
+    }
+
+    @Test
+    void failedModel_isPublished_ifThePlatformLaterReportsItReady() {
+        long created = T0 - 100_000;
+        source.all = List.of(model("m-1", created, Status.FAILED, created));
+
+        sync.syncAll();
+        now += TICK;
+        source.incrementalAnswers.add(List.of(model("m-1", created, Status.READY, created)));
+        sync.syncAll();
+
+        verify(specifications, times(1)).createAiModelSpecification(any());
+    }
+
+    @Test
+    void settleTime_countsFromWhenTheModelWasReady_notFromItsCreation() {
+        // Created an hour ago (a slow upload), ready 10 s ago.
+        long created = T0 - 3_600_000;
+        long ready = T0 - 10_000;
+        DiscoveredModel<String> m1 = model("m-1", created, Status.READY, ready);
+        source.all = List.of(m1);
+
+        sync.syncAll();                                      // 10 s after ready
+        verify(specifications, times(0)).createAiModelSpecification(any());
+        assertEquals(List.of(), source.artifactChecks, "not checked in storage while settling");
+
+        now += TICK;
+        source.incrementalAnswers.add(List.of(m1));
+        sync.syncAll();                                      // 70 s after ready
+        verify(specifications, times(1)).createAiModelSpecification(any());
+    }
+
+    @Test
+    void justCreatedModel_ofASourceWithoutStatus_settlesFromItsCreation() {
+        DiscoveredModel<String> m1 = model("m-1", T0 - 1_000);
+        source.all = List.of(m1);
+
+        sync.syncAll();
+        verify(specifications, times(0)).createAiModelSpecification(any());
+
+        now += TICK;
+        source.incrementalAnswers.add(List.of(m1));
+        sync.syncAll();
+        verify(specifications, times(1)).createAiModelSpecification(any());
+    }
+
+    @Test
+    void modelWithoutReadyTime_isNotDelayed() {
+        source.all = List.of(model("r-1", 0, Status.READY, 0));
+
+        sync.syncAll();
+
+        verify(specifications, times(1)).createAiModelSpecification(any());
+    }
+
+    @Test
+    void settleZero_publishesAModelReadyNow() {
+        CatalogSyncService noSettle = newSync(0, source);
+        source.all = List.of(model("m-1", T0, Status.READY, T0));
+
+        noSettle.syncAll();
+
+        verify(specifications, times(1)).createAiModelSpecification(any());
     }
 
     // ── Failures ─────────────────────────────────────────────────────────

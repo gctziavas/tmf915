@@ -42,6 +42,10 @@ class FakeCatalogSource implements CatalogSource<String> {
         return new DiscoveredModel<>(key, "name-" + key, "v-" + key, createdAtMs, key);
     }
 
+    static DiscoveredModel<String> model(String key, long createdAtMs, DiscoveredModel.Status status, long readyAtMs) {
+        return new DiscoveredModel<>(key, "name-" + key, "v-" + key, createdAtMs, key, status, readyAtMs);
+    }
+
     long fullSearches() {
         return searches.stream().filter(s -> s == null).count();
     }

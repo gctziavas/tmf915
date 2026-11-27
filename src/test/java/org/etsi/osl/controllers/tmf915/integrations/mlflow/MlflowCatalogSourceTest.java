@@ -1,6 +1,7 @@
 package org.etsi.osl.controllers.tmf915.integrations.mlflow;
 
 import org.etsi.osl.controllers.tmf915.catalog.DiscoveredModel;
+import org.etsi.osl.controllers.tmf915.catalog.DiscoveredModel.Status;
 import org.etsi.osl.controllers.tmf915.model.AiModelSpecificationCreate;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -85,6 +86,62 @@ class MlflowCatalogSourceTest {
         assertEquals("churn", found.get(0).name());
         assertEquals("2", found.get(0).version());
         assertEquals(0, found.get(0).createdAtMs(), "registry versions never start incremental searches");
+    }
+
+    // Status values as MLflow 3.18 reports them over REST (checked 2026-11-27): a model is
+    // LOGGED_MODEL_PENDING from initialize_logged_model until log_model finalizes it.
+    @Test
+    void loggedModelStatus_pendingAndFailedAreReported_anythingElseCountsAsReady() {
+        LoggedModel pending = loggedModel("m-1", "1", 1_000);
+        pending.getInfo().setStatus("LOGGED_MODEL_PENDING");
+        LoggedModel failed = loggedModel("m-2", "1", 2_000);
+        failed.getInfo().setStatus("LOGGED_MODEL_UPLOAD_FAILED");
+        LoggedModel ready = loggedModel("m-3", "1", 3_000);
+        ready.getInfo().setStatus("LOGGED_MODEL_READY");
+        LoggedModel none = loggedModel("m-4", "1", 4_000);                 // no status reported
+        LoggedModel unspecified = loggedModel("m-5", "1", 5_000);
+        unspecified.getInfo().setStatus("LOGGED_MODEL_STATUS_UNSPECIFIED");
+        when(mlflowClient.searchAllLoggedModels()).thenReturn(List.of(pending, failed, ready, none, unspecified));
+
+        assertEquals(List.of(Status.PENDING, Status.FAILED, Status.READY, Status.READY, Status.READY),
+                source.discover(null).stream().map(DiscoveredModel::status).toList());
+    }
+
+    // MLflow sets last_updated_timestamp_ms when log_model finalizes the model; linking a metric
+    // afterwards does not change it (checked with 3.18), so it is when the model was ready.
+    @Test
+    void loggedModelReadyTime_isItsLastUpdate_elseItsCreation() {
+        LoggedModel updated = loggedModel("m-1", "1", 1_000);
+        updated.getInfo().setLastUpdatedTimestampMs(1_900);
+        LoggedModel neverUpdated = loggedModel("m-2", "1", 2_000);
+        when(mlflowClient.searchAllLoggedModels()).thenReturn(List.of(updated, neverUpdated));
+
+        assertEquals(List.of(1_900L, 2_000L),
+                source.discover(null).stream().map(DiscoveredModel::readyAtMs).toList());
+    }
+
+    @Test
+    void incrementalSearch_reportsStatusAndReadyTimeToo() {
+        LoggedModel pending = loggedModel("m-1", "1", 6_000);
+        pending.getInfo().setStatus("LOGGED_MODEL_PENDING");
+        pending.getInfo().setLastUpdatedTimestampMs(6_000);
+        when(mlflowClient.searchAllLoggedModelsCreatedAfter(5_000)).thenReturn(List.of(pending));
+
+        DiscoveredModel<MlflowCatalogSource.MlflowModel> found = source.discover(5_000L).get(0);
+
+        assertEquals(Status.PENDING, found.status());
+        assertEquals(6_000, found.readyAtMs());
+    }
+
+    @Test
+    void registryVersions_areReady_withoutReadyTime() {
+        when(mlflowClient.searchAllLoggedModels()).thenReturn(List.of());
+        when(mlflowClient.searchAllModelVersions()).thenReturn(List.of(modelVersion("churn", "2", "runs/churn/2")));
+
+        DiscoveredModel<MlflowCatalogSource.MlflowModel> found = source.discover(null).get(0);
+
+        assertEquals(Status.READY, found.status());
+        assertEquals(0, found.readyAtMs(), "registry versions are published without waiting, as before");
     }
 
     @Test

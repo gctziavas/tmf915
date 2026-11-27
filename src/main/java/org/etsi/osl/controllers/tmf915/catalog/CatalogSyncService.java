@@ -31,6 +31,10 @@ import java.util.function.LongSupplier;
  *   <li>Searches the platform: in full every {@code aimodel.catalog.sync.full-interval-ms}
  *       (default 10 minutes), and in between only for models created since the newest one seen,
  *       as long as the source supports that.</li>
+ *   <li>Skips models the platform has not finished writing ({@link DiscoveredModel#status()}), and
+ *       models ready for less than {@code aimodel.catalog.sync.settle-ms} (default 1 minute), so
+ *       that what a publisher adds right after the model, such as MLflow metrics, is in the
+ *       specification. Both are looked at again on the next search that returns them.</li>
  *   <li>Skips models already in the catalog (same {@code name} and {@code version}), remembering
  *       them so the database is asked once per model.</li>
  *   <li>Skips models whose files are not stored yet, and checks them again after 10 minutes.</li>
@@ -65,6 +69,11 @@ public class CatalogSyncService {
      * default matches {@link #MISSING_ARTIFACTS_BACKOFF_MS}.
      */
     private final long fullSyncIntervalMs;
+    /**
+     * How long after a model is ready ({@link DiscoveredModel#readyAtMs()}) it is published, so
+     * that metadata the publisher adds right after the model is included.
+     */
+    private final long settleMs;
     private final Map<CatalogSource<?>, SourceState> states = new IdentityHashMap<>();
 
     /** Overridable in tests. */
@@ -75,16 +84,23 @@ public class CatalogSyncService {
                               AiModelSpecificationRepositoryService specifications,
                               ArtifactService artifactService,
                               @Value("${aimodel.catalog.sync.full-interval-ms:${mlflow.sync.full-interval-ms:600000}}")
-                              long fullSyncIntervalMs) {
-        this(sources.orderedStream().toList(), specifications, artifactService, fullSyncIntervalMs);
+                              long fullSyncIntervalMs,
+                              @Value("${aimodel.catalog.sync.settle-ms:60000}") long settleMs) {
+        this(sources.orderedStream().toList(), specifications, artifactService, fullSyncIntervalMs, settleMs);
     }
 
     CatalogSyncService(List<CatalogSource<?>> sources, AiModelSpecificationRepositoryService specifications,
-                       ArtifactService artifactService, long fullSyncIntervalMs) {
+                       ArtifactService artifactService, long fullSyncIntervalMs, long settleMs) {
         this.sources = List.copyOf(sources);
         this.specifications = specifications;
         this.artifactService = artifactService;
         this.fullSyncIntervalMs = fullSyncIntervalMs;
+        this.settleMs = Math.max(0, settleMs);
+        if (this.settleMs > INCREMENTAL_OVERLAP_MS) {
+            log.warn("Catalog sync: aimodel.catalog.sync.settle-ms ({} ms) is longer than the {} ms incremental searches "
+                    + "look back, so new models are often found only by full searches and published up to "
+                    + "aimodel.catalog.sync.full-interval-ms later", this.settleMs, INCREMENTAL_OVERLAP_MS);
+        }
         for (CatalogSource<?> source : this.sources) {
             states.put(source, new SourceState());
         }
@@ -164,17 +180,39 @@ public class CatalogSyncService {
         if (state.synced.contains(key)) {
             return false;
         }
-        // 2. Already in the catalog.
+        // 2. Not finished on the platform. The status comes with every search, so there is no
+        //    back-off: the model is looked at again on the next search that returns it.
+        if (model.status() != DiscoveredModel.Status.READY) {
+            if (state.reportedStatus.put(key, model.status()) != model.status()) {
+                if (model.status() == DiscoveredModel.Status.PENDING) {
+                    log.info("Catalog sync ({}): skipped model {} ({} {}) because the platform is still writing it. "
+                            + "It is published once it is complete.", source.platform(), key, model.name(), model.version());
+                } else {
+                    log.warn("Catalog sync ({}): skipped model {} ({} {}) because the platform reports that writing it "
+                            + "failed. It is not published unless that changes.", source.platform(), key, model.name(),
+                            model.version());
+                }
+            }
+            return false;
+        }
+        // 3. Ready only just now: wait, so that what the publisher adds right after the model
+        //    (MLflow: the metrics linked to it) is in the specification, which is never updated.
+        if (model.readyAtMs() > 0 && now - model.readyAtMs() < settleMs) {
+            log.debug("Catalog sync ({}): model {} is ready since {} ms; publishing it after {} ms",
+                    source.platform(), key, now - model.readyAtMs(), settleMs);
+            return false;
+        }
+        // 4. Already in the catalog.
         if (specifications.findAiModelSpecificationByNameAndVersion(model.name(), model.version()) != null) {
             state.synced.add(key);
             return false;
         }
-        // 3. Backing off after missing files.
+        // 5. Backing off after missing files.
         Long nextCheck = state.nextArtifactCheck.get(key);
         if (nextCheck != null && now < nextCheck) {
             return false;
         }
-        // 4. Files stored yet?
+        // 6. Files stored yet?
         if (!source.hasArtifacts(model)) {
             if (nextCheck == null) {
                 log.info("Catalog sync ({}): skipped model {} ({} {}) because no artifacts were found in storage. "
@@ -191,6 +229,7 @@ public class CatalogSyncService {
                     model.name(), model.version(), nextCheck != null ? " after previous back-off" : "");
             state.synced.add(key);
             state.nextArtifactCheck.remove(key);
+            state.reportedStatus.remove(key);
             return true;
         } catch (Exception e) {
             log.warn("Catalog sync ({}): failed to create specification for {} {}: {}",
@@ -227,6 +266,8 @@ public class CatalogSyncService {
     private static final class SourceState {
         final Set<String> synced = ConcurrentHashMap.newKeySet();
         final Map<String, Long> nextArtifactCheck = new ConcurrentHashMap<>();
+        /** Last status logged for a model that was not ready, so each change is logged once. */
+        final Map<String, DiscoveredModel.Status> reportedStatus = new ConcurrentHashMap<>();
         /** Newest creation time seen; null until a search found a model with one. */
         volatile Long watermarkMs;
         volatile long lastFullSearchMs;

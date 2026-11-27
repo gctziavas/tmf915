@@ -3,7 +3,7 @@
 How to get your trained model into the TMF 915 catalog and served through the API. You log the model to MLflow as usual; the API picks it up, publishes it as an `aiModelSpecification`, and deploys it as an HTTP endpoint when someone asks for it.
 
 ```
-your training code ──log_model──▶ MLflow + MinIO ──sync, ~1 min──▶ aiModelSpecification ──deploy──▶ /invocations
+your training code ──log_model──▶ MLflow + MinIO ──sync, 1–2 min──▶ aiModelSpecification ──deploy──▶ /invocations
 ```
 
 No change to the API is needed per model.
@@ -86,6 +86,7 @@ print("Logged model:", model_info.model_id)   # m-…, becomes the catalog versi
 Notes on the example:
 
 - **`params`:** the values passed to `log_model(params=...)` are stored on the logged model, which is where the API reads them. Parameters logged only to the run with `mlflow.log_param` may not reach the catalog.
+- **Metrics:** log them right after `log_model`, as above. The catalog entry is created once, one minute after `log_model` finished (`aimodel.catalog.sync.settle-ms`), and never updated: metrics linked to the model later do not reach the catalog. Compute everything slow before `log_model`.
 - **Pandas input:** training on a DataFrame gives the signature real column names, so the example request body uses them.
 - **`skops_trusted_types`:** recent MLflow 3 releases (3.18 when this was checked) save scikit-learn models in the `skops` format and refuse to log a model containing types not explicitly trusted. Tree-based models (decision trees, random forests, gradient boosting) need `sklearn.tree._tree.Tree`. If `log_model` fails with "references untrusted types", trust exactly the types the message lists. If your MLflow version does not know this argument, remove it.
 
@@ -141,7 +142,7 @@ from mlflow import MlflowClient
 MlflowClient().set_registered_model_tag("churn", "downloadable", "false")
 ```
 
-The tag is read when the catalog entry is created, about a minute after logging. For a model that is already in the catalog, set the characteristic on the specification instead:
+The tag is read when the catalog entry is created, one to two minutes after logging. For a model that is already in the catalog, set the characteristic on the specification instead:
 
 ```bash
 curl -s -X PATCH -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
@@ -190,7 +191,7 @@ MLflow stores the file as `extra_files/model.onnx` in the model directory, which
 
 ## 4. Check that your model was published
 
-Within about a minute (the sync runs every minute):
+Within one to two minutes. The sync runs every minute, and publishes a model only once MLflow reports it ready and one minute has passed since, so that the metrics you log right after `log_model` are included:
 
 ```bash
 # See the user guide, section 2, for getting $TOKEN
@@ -243,8 +244,9 @@ To remove a version from the catalog: `DELETE /aiModelSpecification/<SPEC_ID>`. 
 
 | Symptom                                                                   | Cause and fix                                                                                                                                                                                                                                                          |
 | ------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Model never appears in the catalog                                        | It was logged to a different MLflow server than the API's`mlflow.tracking-uri`; or its artifacts are not in MinIO (log: `no artifacts were found … Backing off for 10 minutes`); or it is only in the classic Model Registry while the server also has logged models. |
+| Model never appears in the catalog                                        | It was logged to a different MLflow server than the API's`mlflow.tracking-uri`; or its artifacts are not in MinIO (log: `no artifacts were found … Backing off for 10 minutes`); or it is only in the classic Model Registry while the server also has logged models; or MLflow still reports it pending (log: `the platform is still writing it`), which stays so for good if the logging script stopped during `log_model`: log the model again; or its upload failed (log: `writing it failed`). |
 | Catalog`description` is generic                                           | `config.version` was not passed in `log_model(params=...)`.                                                                                                                                                                                                            |
+| A metric is in MLflow but not in the catalog | It was linked to the model more than `aimodel.catalog.sync.settle-ms` (one minute) after `log_model`, after the catalog entry was created; or its name contains none of the words listed in [section 3](#3-what-ends-up-in-the-catalog). Log it right after `log_model`, then log the model again to get a new catalog entry. |
 | `inferencePayloadExample` contains `WARNING: Could not extract signature` | No signature was logged. Log the model again with`signature=` or `input_example=`.                                                                                                                                                                                     |
 | Deployment goes back to `designed`, note "Image build failed: model files not found" | Artifacts missing or unreadable in MinIO. Check the bucket in the MinIO console (http://localhost:9011). |
 | Deployment goes back to `designed`, note "Image build failed" | `mlflow models build-docker` could not build your environment, usually an unpinned or unavailable dependency. The note has a reference; the operator finds the build output in the server log with it. Or run `mlflow models build-docker -m <artifactUri> -n test` yourself, and pin versions with `pip_requirements=`. |

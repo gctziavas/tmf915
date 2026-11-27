@@ -438,12 +438,16 @@ public interface CatalogSource<T> {
     AiModelSpecificationCreate toSpecification(DiscoveredModel<T> model) throws IOException;
 }
 
-record DiscoveredModel<T>(String key, String name, String version, long createdAtMs, T details) {}
+record DiscoveredModel<T>(String key, String name, String version, long createdAtMs, T details,
+                          Status status, long readyAtMs) {   // Status: READY, PENDING, FAILED
+    DiscoveredModel(String key, String name, String version, long createdAtMs, T details) {...}  // READY since creation
+}
 ```
 
 Make it a bean, `@ConditionalOnProperty` on your platform's `…enabled` setting. `CatalogSyncService` runs every source on the schedule `aimodel.catalog.sync.interval-ms` and does the generic work, so the source only talks to its platform:
 
 - **`discover`:** with `null`, list all models; with a time, at least the models created after it (more is allowed). Fill `name` and `version` as the specification's: together they decide whether the model is already in the catalog. `key` must be unique within your source. Set `createdAtMs` if your platform can search by creation time; the sync then asks for new models only, and searches in full every `aimodel.catalog.sync.full-interval-ms`. Use `0` if it cannot. If an incremental search throws, the sync stops trying them and searches in full. `details` is yours: whatever `hasArtifacts` and `toSpecification` need.
+- **`status` and `readyAtMs`:** if your platform says whether it has finished writing a model, report `PENDING` while it is writing and `FAILED` if it gave up; the sync publishes only `READY` models and looks at the others again on every search, without a back-off. `readyAtMs` is when the model became ready (or last changed): the sync publishes it `aimodel.catalog.sync.settle-ms` later, so that what a publisher adds right after the model is in the specification, which is never updated afterwards. The short constructor means ready since creation; `0` means no wait. The MLflow source reports MLflow's logged-model status and its last update time.
 - **`hasArtifacts`:** `false` makes the sync skip the model and check again after 10 minutes.
 - **`toSpecification`:** name, version, description, `lifecycleStatus` and the characteristics your locator and deployer need (for example the artifact location). Do **not** add `platform`, `artifactFormat` or the download attachment: the sync adds them for every source. Set `artifactFormat` yourself only if a model's format differs from `artifactFormat()`. To honour a publisher's opt-out, set the characteristic `downloadable=false`, as the MLflow source does from the tag `downloadable`.
 

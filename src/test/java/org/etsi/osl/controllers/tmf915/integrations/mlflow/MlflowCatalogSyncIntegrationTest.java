@@ -32,7 +32,8 @@ import static org.junit.jupiter.api.Assumptions.assumeFalse;
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE,
         properties = {
                 "mlflow.sync.enabled=true",
-                "aimodel.catalog.sync.interval-ms=9999999"   // prevent auto-trigger
+                "aimodel.catalog.sync.interval-ms=9999999",  // prevent auto-trigger
+                "aimodel.catalog.sync.settle-ms=0"           // publish models logged just before the test
         })
 @ActiveProfiles("integration")
 @Tag("integration")
