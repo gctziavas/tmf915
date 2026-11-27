@@ -248,6 +248,7 @@ Settings live in `src/main/resources/application.yml`. In Docker Compose, overri
 | `aimodel.artifacts.max-download-bytes` | `2147483648` (2 GB) | Larger models are not offered for download (`413`). |
 | `aimodel.artifacts.download-timeout` | `15m` | Longest time one download may take; it is then cut off, so a slow client cannot keep a connection and a storage stream open. Raise it for large models on slow links. |
 | `aimodel.artifacts.backfill-on-startup` | `true` | After startup, add the download `attachment` to downloadable specifications that have none (those catalogued before downloads existed). |
+| `spring.task.execution.pool.core-size` | `8` | Spring's shared pool for background work, which streams the model downloads (and runs the startup backfill). At most this many downloads run at once; more wait for a free thread. Downloads have no limit of their own. |
 | `hub.webhook.enabled` | `false` | Send event notifications to subscribers (see the [integration guide](INTEGRATION_GUIDE.md#6-event-notifications-webhooks)). |
 | `hub.webhook.allowed-callback-hosts` | empty | If set (comma-separated host names), only these callback hosts are accepted, including internal ones. |
 | `hub.webhook.block-private-addresses` | `true` | Refuse callbacks that resolve to loopback, link-local or private addresses. Applies when `allowed-callback-hosts` is empty. |

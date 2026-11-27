@@ -149,7 +149,7 @@ curl -s -X PATCH -H "Authorization: Bearer $TOKEN" -H "Content-Type: application
   "http://localhost:13082/tmf-api/AiM/v4/aiModelSpecification/<SPEC_ID>"
 ```
 
-The download then answers `404` with the reason, and the attachment disappears. Opting out does not affect deployment: the model can still be deployed and called through its endpoint.
+The download then answers `404` with the reason, and the attachment disappears. Setting it back to `true` (or removing it) makes the model downloadable again at once, but the attachment only reappears after the API's next restart. Opting out does not affect deployment: the model can still be deployed and called through its endpoint.
 
 ### Also offer an ONNX version
 

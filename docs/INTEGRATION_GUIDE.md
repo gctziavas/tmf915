@@ -203,7 +203,7 @@ curl -s -H "Authorization: Bearer $TOKEN" "$API/aiModelSpecification?fields=name
 | `size` | Total size of the files before zipping. `amount` is a TMF float; the exact byte count is in `description`. |
 | `name` | A file name for the zip. |
 
-A model is offered as `onnx` too when its publisher added an ONNX copy (see the [model publishing guide](MODEL_PUBLISHING_GUIDE.md#also-offer-an-onnx-version)). A specification has no such attachment when its model cannot be downloaded: its platform does not support downloads, its publisher opted out (characteristic `downloadable=false`), its files are outside the storage the server may read, it is larger than the server's limit, or the server has no storage configured. Specifications catalogued before downloads existed get the attachment in the background after the server's next start.
+A model is offered as `onnx` too when its publisher added an ONNX copy (see the [model publishing guide](MODEL_PUBLISHING_GUIDE.md#also-offer-an-onnx-version)). A specification has no such attachment when its model cannot be downloaded: its platform does not support downloads, its publisher opted out (characteristic `downloadable=false`), its files are outside the storage the server may read, it is larger than the server's limit, or the server has no storage configured. Specifications catalogued before downloads existed get the attachment in the background after the server's next start. Specifications catalogued before ONNX downloads existed keep only their `mlflow-model` attachment, even if the model has an ONNX copy; `?format=onnx` works for them all the same.
 
 ### 5.2 Download
 
@@ -215,7 +215,7 @@ unzip -q iris.zip -d iris-model
 curl -fSL -H "Authorization: Bearer $TOKEN" -o iris-onnx.zip "$API/aiModelSpecification/<SPEC_ID>/artifacts?format=onnx"
 ```
 
-Without `format`, the download is the primary format (`artifactFormat`). The simplest client follows an attachment's `href`, which always names its format.
+Without `format`, the download is the primary format (`artifactFormat`). The simplest client follows an attachment's `href`, which always names its format. The same calls are requests 8 to 8.2 in the Postman collection in [`postman/`](../postman/) (use Send and Download to save the zip).
 
 | Status | Meaning |
 |---|---|
@@ -384,12 +384,14 @@ The API includes a [Model Context Protocol](https://modelcontextprotocol.io/) se
 
 | Tool | Arguments | Returns |
 |---|---|---|
-| `listAvailableAiModelSpecifications` | `offset`, `limit` | `id`, `name`, `version`, `lifecycleStatus`, `href` per specification |
+| `listAvailableAiModelSpecifications` | `offset`, `limit` | `id`, `name`, `version`, `lifecycleStatus`, `href` and `downloads` per specification |
 | `getAiModelSpecification` | `specificationId` | One specification summary |
 | `listAvailableAiModels` | `namePrefix` (optional) | `id`, `name`, `state`, `version`, `aiModelSpecificationId`, `href` per model |
 | `getAiModel` | `modelId` | One model summary |
 
 The tools are read-only: agents cannot deploy or stop models through MCP.
+
+`downloads` lists the formats a model can be downloaded in, one entry per `ModelArtifactAttachment` (see [5.1](#51-find-downloadable-models)): `format`, `href` and `sizeBytes`, which is approximate above 16 MiB. It is empty when the model cannot be downloaded. MCP does not deliver the files: downloading from `href` needs a token with `ROLE_USER`, as in [5.2](#52-download).
 
 **The MCP endpoints require no token.** This is deliberate, so agents can connect without OAuth, but it means anyone who can reach the API port can read the catalog and the deployed models' ids, names and states. Do not expose `/tmf-api/sse` and `/tmf-api/mcp/` beyond the network your agents run in: either keep the API port off untrusted networks, or block those paths at your reverse proxy. For example, with nginx in front of the API:
 

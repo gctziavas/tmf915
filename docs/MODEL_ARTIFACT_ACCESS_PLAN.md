@@ -218,6 +218,20 @@ The manual check (2026-11-26, below) passed, but every download was logged with 
 - [x] 2a. Integration tests against the verification stack (client, specification and catalog-sync; the deployer and lifecycle tests, which build Docker images, not run): 22 of 23 passed. `MlflowCatalogSyncIntegrationTest.syncModels_createsSpecificationsFromLoggedModels` failed whenever it ran after `syncModels_isIdempotent` (JUnit's default order): the shared sync remembers published models and, as documented (`MODEL_PUBLISHING_GUIDE.md` section 6), does not recreate a deleted specification before a restart, but the test deletes them and expects a sync to recreate them. It passed alone. Pre-existing: `MlflowSyncService` had the same cache and the test the same two methods before PR 2. Fix: `@DirtiesContext(methodMode = BEFORE_METHOD)` on that test, so it starts with a sync that has not run; no production change. Then 23 of 23 passed in the same order. 440 unit tests passing.
 - [x] 3. Record the manual check: PR 1's item ticked, PR 4's "Not verified" note replaced, outcome under "Verification of the whole feature". `CHANGELOG.md` has the item 1 and 2 fix (Fixed); the check itself changes nothing for clients.
 
+### PR 6: optional extras, and the known follow-ups — done, uncommitted
+
+Decided 2026-11-27: do the optional items before merging to `main`, and note the follow-ups without fixing them.
+
+1. Note the follow-ups found while building the feature, in this plan and where operators or clients would look.
+2. Postman: requests to find a downloadable specification and download it in each format.
+3. MCP: the specification tools also say in which formats a model can be downloaded, with size and link. Metadata only: the MCP endpoints are unauthenticated, so they must not stream files, which would bypass `ROLE_USER`.
+
+**Progress** (ticked when the item's code, tests and docs are done and `mvn clean test` passes):
+
+- [x] 1. Follow-ups noted: section "Follow-ups (not planned)" below, four items with their impact and a possible fix. For users: `USER_GUIDE.md` section 8 has a `spring.task.execution.pool.core-size` row (downloads share that pool, and more wait for a thread). `INTEGRATION_GUIDE.md` 5.1 says that specifications catalogued before PR 4 advertise only `mlflow-model`, and that `?format=onnx` works for them. `MODEL_PUBLISHING_GUIDE.md` section 3 says that removing `downloadable=false` brings the download back at once, but the attachment only at the next restart. The float size was already documented (5.1). Docs only.
+- [x] 2. Postman requests, added at the end so the deploy flow (3 to 7) keeps its numbers. **8** lists specifications with `fields=name,version,attachment`, picks the first one with a `ModelArtifactAttachment`, and stores `downloadSpecificationId` and `downloadFormats` (new collection variables). **8.1** downloads the primary format and checks `200`, the zip `Content-Type` and `Content-Disposition`. **8.2** downloads `?format=onnx`: it expects `200` and a zip when the specification offers `onnx`, and otherwise `404` with "has no download in format onnx". The scripts were run in Node against sample responses (six cases, including ones that must fail); not run in Postman or newman, which is not installed. `INTEGRATION_GUIDE.md` 5.2 points to them. JSON formatting kept (2-space indent).
+- [x] 3. MCP download formats. `AiCatalogMcpTools.AiModelSpecificationSummary` gains `downloads`, a list of `DownloadSummary(format, href, sizeBytes)` built from the specification's `ModelArtifactAttachment`s (`DownloadAttachments.findAll`), in their order (primary first). A client's own attachments are left out, and the list is empty if the model cannot be downloaded. `href` is the API link the repository sets on every read; `sizeBytes` is `size.amount` rounded (approximate above 16 MiB, follow-up 4). The tools serve metadata only, never files, because MCP is unauthenticated; their descriptions mention the formats. Tests: `AiCatalogMcpToolsUnitTest` (+2: formats with link and size, a client attachment left out; not downloadable gives an empty list), which failed to compile before. `INTEGRATION_GUIDE.md` section 7: table and a paragraph on `downloads`; `CHANGELOG.md` (Added). 442 tests passing.
+
 ## Verification of the whole feature
 
 On the verification stack (fix plan, PR 5 outcome), with the example model from `MODEL_PUBLISHING_GUIDE.md`:
@@ -237,6 +251,15 @@ On the verification stack (fix plan, PR 5 outcome), with the example model from 
 - Step 5: the guide's `skl2onnx` snippet runs as written. The `onnx` zip holds only `model.onnx`, which ONNX Runtime runs with the pipeline's predictions.
 - Finding: the server's download log said `user=null`, because the demo realm's tokens had no `sub`. Fixed in PR 5.
 - Integration tests (client, specification, catalog sync) against the same stack: 23 of 23 after the PR 5 item 2a test fix.
+
+## Follow-ups (not planned)
+
+Found while building the feature; noted 2026-11-27, not fixed. Each is described for users where they would look.
+
+1. **No limit on concurrent downloads.** Downloads stream on Spring's shared task pool (`applicationTaskExecutor`, 8 threads by default, unbounded queue), which the startup backfill also uses. A ninth download waits for a thread instead of being refused. A slow client holds a thread for up to `aimodel.artifacts.download-timeout`. Possible fix: a dedicated executor for downloads with a bounded queue, answering `503` with `Retry-After` when full. Documented in `USER_GUIDE.md` section 8 (`spring.task.execution.pool.core-size`).
+2. **The startup backfill does not add `onnx` to specifications that already advertise a download.** It only fills specifications with no download attachment at all, so those catalogued between PR 1 and PR 4 keep only `mlflow-model` even when their model has `extra_files/model.onnx`. `?format=onnx` still works for them, because downloads ask the locator, not the attachments. Possible fix: the backfill compares each specification's attachments with `ArtifactService.describeAll` and adds the missing formats. Documented in `INTEGRATION_GUIDE.md` section 5.1.
+3. **Removing `downloadable=false` restores the attachment only at the next restart.** The download works again immediately; the attachment is put back by the startup backfill. Possible fix: when a PATCH changes `downloadable` from `false`, describe the specification again and add its attachments. Documented in `MODEL_PUBLISHING_GUIDE.md` section 3.
+4. **`size.amount` is a float.** TMF's `Quantity.amount` is a 32-bit float, so sizes above 16 MiB (2^24 bytes) are rounded, by up to 128 bytes at 2 GB. The exact byte count is in the attachment's `description`. Not fixable without leaving the TMF schema. Already documented in `INTEGRATION_GUIDE.md` section 5.1.
 
 ## Working rules
 

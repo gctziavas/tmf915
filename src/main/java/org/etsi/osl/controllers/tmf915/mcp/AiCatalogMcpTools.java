@@ -1,7 +1,9 @@
 package org.etsi.osl.controllers.tmf915.mcp;
 
+import org.etsi.osl.controllers.tmf915.artifacts.DownloadAttachments;
 import org.etsi.osl.controllers.tmf915.model.AiModel;
 import org.etsi.osl.controllers.tmf915.model.AiModelSpecification;
+import org.etsi.osl.controllers.tmf915.model.AttachmentRefOrValue;
 import org.etsi.osl.controllers.tmf915.reposervices.AiModelRepositoryService;
 import org.etsi.osl.controllers.tmf915.reposervices.AiModelSpecificationRepositoryService;
 import org.springframework.ai.tool.annotation.Tool;
@@ -25,7 +27,7 @@ public class AiCatalogMcpTools {
         this.specificationRepositoryService = specificationRepositoryService;
     }
 
-    @Tool(description = "List available AI model specifications")
+    @Tool(description = "List available AI model specifications, with the formats each can be downloaded in")
     public List<AiModelSpecificationSummary> listAvailableAiModelSpecifications(
             @ToolParam(description = "Zero-based offset") Integer offset,
             @ToolParam(description = "Page size limit") Integer limit) {
@@ -37,7 +39,7 @@ public class AiCatalogMcpTools {
                 .toList();
     }
 
-    @Tool(description = "Get details of an available AI model specification by id")
+    @Tool(description = "Get details of an available AI model specification by id, with the formats it can be downloaded in")
     public AiModelSpecificationSummary getAiModelSpecification(
             @ToolParam(description = "AI model specification id") String specificationId) {
         if (specificationId == null || specificationId.isBlank()) {
@@ -74,7 +76,16 @@ public class AiCatalogMcpTools {
                 spec.getName(),
                 spec.getVersion(),
                 spec.getLifecycleStatus(),
-                spec.getHref());
+                spec.getHref(),
+                DownloadAttachments.findAll(spec.getAttachment()).stream()
+                        .map(AiCatalogMcpTools::toDownload)
+                        .toList());
+    }
+
+    private static DownloadSummary toDownload(AttachmentRefOrValue attachment) {
+        Float amount = attachment.getSize() != null ? attachment.getSize().getAmount() : null;
+        return new DownloadSummary(attachment.getAttachmentType(), attachment.getHref(),
+                amount != null ? Math.round((double) amount) : null);
     }
 
     private static AiModelSummary toSummary(AiModel model) {
@@ -87,12 +98,28 @@ public class AiCatalogMcpTools {
                 model.getHref());
     }
 
+    /**
+     * {@code downloads}: one entry per format the model can be downloaded in, from the
+     * specification's {@code ModelArtifactAttachment}s; empty if it cannot be downloaded.
+     */
     public record AiModelSpecificationSummary(
             String id,
             String name,
             String version,
             String lifecycleStatus,
-            URI href) {
+            URI href,
+            List<DownloadSummary> downloads) {
+    }
+
+    /**
+     * A download offer, not the files: the MCP endpoints are unauthenticated, while downloading
+     * ({@code href}) needs a token with {@code ROLE_USER}. {@code sizeBytes} comes from the
+     * attachment's {@code size}, a TMF float, so it is approximate above 16 MiB.
+     */
+    public record DownloadSummary(
+            String format,
+            URI href,
+            Long sizeBytes) {
     }
 
     public record AiModelSummary(
